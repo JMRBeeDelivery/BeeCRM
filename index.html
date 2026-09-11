@@ -433,7 +433,10 @@ const TIPOS_NEG = new Set(["No-show"]);
 
 const ORIGENS = ["Outbound frio","LinkedIn / social selling","Indicação","Evento / feira","Inbound","Parceiro","Base reativada","Licitação / RFP"];
 const PORTES = ["Rede nacional (300+ lojas)","Rede regional (100–299)","Rede local (20–99)","Até 20 lojas","Grupo econômico"];
-const MOTIVOS_PERDA = ["Preço por entrega","Sem prioridade agora","Concorrente","Sem fit com o ICP","Decisor não engajou","Processo interno travado","Sem resposta"];
+const MOTIVOS_PERDA = ["Preço por entrega","Sem prioridade agora","Concorrente","Sem fit com o ICP","Decisor não engajou","Processo interno travado","Sem resposta","Nuvem de entregadores"];
+const TEMPERATURAS = ["Quente","Morno","Frio"];
+const COR_TEMP = {Quente:"var(--danger)", Morno:"var(--at-reuniao)", Frio:"var(--at-email)"};
+const FITS = ["Alto","Médio","Baixo"];
 
 /* ============================================================
    2. Utilitários
@@ -483,7 +486,11 @@ function contaDoBanco(r){
     origem:r.origem||"", contatoNome:r.contato_nome||"", contatoCargo:r.contato_cargo||"",
     contatoEmail:r.contato_email||"", contatoTel:r.contato_tel||"",
     decisorNome:r.decisor_nome||"", decisorCargo:r.decisor_cargo||"",
-    entregas90:r.entregas_90||0, lojas:r.lojas||0,
+    praca:r.praca||"", entregasMes:r.entregas_mes||0,
+    lojas:r.lojas||0,
+    temperatura:r.temperatura||"", sistema:r.sistema||"",
+    raioKm:(r.raio_km===null||r.raio_km===undefined)?"":r.raio_km,
+    fit:r.fit||"", previsaoFechamento:r.previsao_fechamento||"",
     etapa:r.etapa||"prospeccao", status:r.status||"ativo", probabilidade:r.probabilidade||0,
     motivoPerda:r.motivo_perda||"", notas:r.notas||"", checklist:r.checklist||{},
     responsavel:r.responsavel||null, entradaEtapa:r.entrada_etapa||hojeISO(),
@@ -495,7 +502,11 @@ function contaParaBanco(c){
     id:c.id, empresa:c.empresa, cnpj:c.cnpj, setor:c.setor, porte:c.porte, origem:c.origem,
     contato_nome:c.contatoNome, contato_cargo:c.contatoCargo, contato_email:c.contatoEmail,
     contato_tel:c.contatoTel, decisor_nome:c.decisorNome, decisor_cargo:c.decisorCargo,
-    entregas_90:c.entregas90, lojas:c.lojas, etapa:c.etapa, status:c.status,
+    praca:c.praca||"", entregas_mes:c.entregasMes||0,
+    temperatura:c.temperatura||"", sistema:c.sistema||"",
+    raio_km:(c.raioKm===""||c.raioKm===null||c.raioKm===undefined)?null:Number(c.raioKm),
+    fit:c.fit||"", previsao_fechamento:c.previsaoFechamento||null,
+    lojas:c.lojas, etapa:c.etapa, status:c.status,
     probabilidade:c.probabilidade, motivo_perda:c.motivoPerda, notas:c.notas,
     checklist:c.checklist||{}, responsavel:c.responsavel, entrada_etapa:c.entradaEtapa,
     exemplo:!!c.exemplo, criado_por:Auth.uid
@@ -753,14 +764,14 @@ const Store = {
    ============================================================ */
 const dRel = n => { const d = new Date(); d.setDate(d.getDate()+n); return iso(d); };
 const EXEMPLOS = [
-  {empresa:"Grupo Aurora Supermercados",cnpj:"18.402.551/0001-09",setor:"Varejo alimentar",porte:PORTES[1],origem:"Indicação",contatoNome:"Renata Salgado",contatoCargo:"Diretora de Suprimentos",contatoEmail:"renata.salgado@aurora.exemplo",contatoTel:"(11) 98844-2210",decisorNome:"Paulo Tramontina",decisorCargo:"CFO",lojas:240,entregas90:96000,etapa:"negociacao",notas:"Compra centralizada em SP. Contrato do operador atual vence em março.",checklist:{negociacao:[true,true,false,false]}},
-  {empresa:"Rede Farmácia Vital",cnpj:"07.918.330/0001-44",setor:"Farmácias",porte:PORTES[0],origem:"Outbound frio",contatoNome:"Márcio Beltrão",contatoCargo:"Gerente de Operações",contatoEmail:"marcio.beltrao@vital.exemplo",contatoTel:"(41) 99612-0455",decisorNome:"Heloísa Braga",decisorCargo:"Diretora de Operações",lojas:412,entregas90:154000,etapa:"maturacao",notas:"9% das entregas fora do prazo no último trimestre. Orçamento fecha em outubro.",checklist:{maturacao:[true,true,false,false]}},
-  {empresa:"Meridiano Conveniências",cnpj:"33.771.208/0001-72",setor:"Conveniência e postos",porte:PORTES[4],origem:"Evento / feira",contatoNome:"Aline Ferraz",contatoCargo:"Head de Operações",contatoEmail:"aline.ferraz@meridiano.exemplo",contatoTel:"(11) 97110-8890",decisorNome:"Comitê de Suprimentos",decisorCargo:"Comitê",lojas:620,entregas90:228000,etapa:"contratual",notas:"Minuta no jurídico há 9 dias. Exigem SLA de 99,9% com penalidade escalonada.",checklist:{contratual:[true,true,false,false]}},
-  {empresa:"Vitrali Varejo",cnpj:"21.556.914/0001-30",setor:"Moda e vestuário",porte:PORTES[1],origem:"LinkedIn / social selling",contatoNome:"Diego Nakamura",contatoCargo:"Gerente de E-commerce",contatoEmail:"diego.nakamura@vitrali.exemplo",contatoTel:"(51) 99303-1187",decisorNome:"Sônia Peixoto",decisorCargo:"Diretora de Canais",lojas:96,entregas90:28500,etapa:"agendamento",notas:"Pauta enviada. Pediu que E-commerce e Logística participem juntos.",checklist:{agendamento:[false,true,false,false]}},
-  {empresa:"Petronorte Postos",cnpj:"12.089.663/0001-58",setor:"Postos e conveniência",porte:PORTES[0],origem:"Licitação / RFP",contatoNome:"Ivan Marcondes",contatoCargo:"Coordenador de Contratos",contatoEmail:"ivan.marcondes@petronorte.exemplo",contatoTel:"(21) 98155-7743",decisorNome:"Cláudia Ribas",decisorCargo:"Diretora de Operações",lojas:310,entregas90:74000,etapa:"conexao",notas:"Edital previsto para o próximo trimestre. Construir relacionamento antes.",checklist:{conexao:[true,false,false,true]}},
-  {empresa:"Saúde Integra",cnpj:"29.640.117/0001-95",setor:"Clínicas e farmácias",porte:PORTES[2],origem:"Base reativada",contatoNome:"Fernanda Quirino",contatoCargo:"Superintendente",contatoEmail:"fernanda.quirino@integra.exemplo",contatoTel:"(31) 99477-6021",decisorNome:"Fernanda Quirino",decisorCargo:"Superintendente",lojas:58,entregas90:12400,etapa:"prospeccao",notas:"Proposta de 2024 parou por troca de diretoria. Estrutura nova desde julho.",checklist:{prospeccao:[true,false,false,false]}},
-  {empresa:"Cerrado Casa & Campo",cnpj:"05.223.470/0001-16",setor:"Agro e construção",porte:PORTES[2],origem:"Parceiro",contatoNome:"Gustavo Lemes",contatoCargo:"Diretor Comercial",contatoEmail:"gustavo.lemes@cerrado.exemplo",contatoTel:"(62) 98230-4409",decisorNome:"Gustavo Lemes",decisorCargo:"Diretor Comercial",lojas:74,entregas90:19800,status:"ganho",etapa:"fechamento",notas:"Piloto em 12 lojas, expansão trimestral.",checklist:{fechamento:[true,true,false,false]}},
-  {empresa:"Sul Atlântico Calçados",cnpj:"14.708.902/0001-21",setor:"Calçados",porte:PORTES[1],origem:"Outbound frio",contatoNome:"Beatriz Coutinho",contatoCargo:"Gerente de Compras",contatoEmail:"beatriz.coutinho@sulatlantico.exemplo",contatoTel:"(47) 99012-3388",decisorNome:"Otávio Reis",decisorCargo:"Diretor de Varejo",lojas:145,entregas90:33000,status:"perdido",motivoPerda:"Concorrente",etapa:"negociacao",notas:"Perdeu no preço por entrega em 8%. Reabordar no 2º semestre.",checklist:{negociacao:[true,true,true,false]}}
+  {empresa:"Grupo Aurora Supermercados",cnpj:"18.402.551/0001-09",setor:"Varejo alimentar",porte:PORTES[1],origem:"Indicação",contatoNome:"Renata Salgado",contatoCargo:"Diretora de Suprimentos",contatoEmail:"renata.salgado@aurora.exemplo",contatoTel:"(11) 98844-2210",decisorNome:"Paulo Tramontina",decisorCargo:"CFO",lojas:240,entregasMes:32000,etapa:"negociacao",notas:"Compra centralizada em SP. Contrato do operador atual vence em março.",checklist:{negociacao:[true,true,false,false]}},
+  {empresa:"Rede Farmácia Vital",cnpj:"07.918.330/0001-44",setor:"Farmácias",porte:PORTES[0],origem:"Outbound frio",contatoNome:"Márcio Beltrão",contatoCargo:"Gerente de Operações",contatoEmail:"marcio.beltrao@vital.exemplo",contatoTel:"(41) 99612-0455",decisorNome:"Heloísa Braga",decisorCargo:"Diretora de Operações",lojas:412,entregasMes:51000,etapa:"maturacao",notas:"9% das entregas fora do prazo no último trimestre. Orçamento fecha em outubro.",checklist:{maturacao:[true,true,false,false]}},
+  {empresa:"Meridiano Conveniências",cnpj:"33.771.208/0001-72",setor:"Conveniência e postos",porte:PORTES[4],origem:"Evento / feira",contatoNome:"Aline Ferraz",contatoCargo:"Head de Operações",contatoEmail:"aline.ferraz@meridiano.exemplo",contatoTel:"(11) 97110-8890",decisorNome:"Comitê de Suprimentos",decisorCargo:"Comitê",lojas:620,entregasMes:76000,etapa:"contratual",notas:"Minuta no jurídico há 9 dias. Exigem SLA de 99,9% com penalidade escalonada.",checklist:{contratual:[true,true,false,false]}},
+  {empresa:"Vitrali Varejo",cnpj:"21.556.914/0001-30",setor:"Moda e vestuário",porte:PORTES[1],origem:"LinkedIn / social selling",contatoNome:"Diego Nakamura",contatoCargo:"Gerente de E-commerce",contatoEmail:"diego.nakamura@vitrali.exemplo",contatoTel:"(51) 99303-1187",decisorNome:"Sônia Peixoto",decisorCargo:"Diretora de Canais",lojas:96,entregasMes:9500,etapa:"agendamento",notas:"Pauta enviada. Pediu que E-commerce e Logística participem juntos.",checklist:{agendamento:[false,true,false,false]}},
+  {empresa:"Petronorte Postos",cnpj:"12.089.663/0001-58",setor:"Postos e conveniência",porte:PORTES[0],origem:"Licitação / RFP",contatoNome:"Ivan Marcondes",contatoCargo:"Coordenador de Contratos",contatoEmail:"ivan.marcondes@petronorte.exemplo",contatoTel:"(21) 98155-7743",decisorNome:"Cláudia Ribas",decisorCargo:"Diretora de Operações",lojas:310,entregasMes:24500,etapa:"conexao",notas:"Edital previsto para o próximo trimestre. Construir relacionamento antes.",checklist:{conexao:[true,false,false,true]}},
+  {empresa:"Saúde Integra",cnpj:"29.640.117/0001-95",setor:"Clínicas e farmácias",porte:PORTES[2],origem:"Base reativada",contatoNome:"Fernanda Quirino",contatoCargo:"Superintendente",contatoEmail:"fernanda.quirino@integra.exemplo",contatoTel:"(31) 99477-6021",decisorNome:"Fernanda Quirino",decisorCargo:"Superintendente",lojas:58,entregasMes:4100,etapa:"prospeccao",notas:"Proposta de 2024 parou por troca de diretoria. Estrutura nova desde julho.",checklist:{prospeccao:[true,false,false,false]}},
+  {empresa:"Cerrado Casa & Campo",cnpj:"05.223.470/0001-16",setor:"Agro e construção",porte:PORTES[2],origem:"Parceiro",contatoNome:"Gustavo Lemes",contatoCargo:"Diretor Comercial",contatoEmail:"gustavo.lemes@cerrado.exemplo",contatoTel:"(62) 98230-4409",decisorNome:"Gustavo Lemes",decisorCargo:"Diretor Comercial",lojas:74,entregasMes:6600,status:"ganho",etapa:"fechamento",notas:"Piloto em 12 lojas, expansão trimestral.",checklist:{fechamento:[true,true,false,false]}},
+  {empresa:"Sul Atlântico Calçados",cnpj:"14.708.902/0001-21",setor:"Calçados",porte:PORTES[1],origem:"Outbound frio",contatoNome:"Beatriz Coutinho",contatoCargo:"Gerente de Compras",contatoEmail:"beatriz.coutinho@sulatlantico.exemplo",contatoTel:"(47) 99012-3388",decisorNome:"Otávio Reis",decisorCargo:"Diretor de Varejo",lojas:145,entregasMes:11000,status:"perdido",motivoPerda:"Concorrente",etapa:"negociacao",notas:"Perdeu no preço por entrega em 8%. Reabordar no 2º semestre.",checklist:{negociacao:[true,true,true,false]}}
 ];
 const EX_ATIV = [
   {i:0,tipo:"Reunião",dias:-2,hora:"14:00",desc:"Rodar cenário de desconto por faixa de volume com o CFO"},
@@ -785,7 +796,7 @@ const EX_INT = [
   {i:3,tipo:"E-mail",dias:-1,resumo:"Convite enviado com pauta. Aguardando confirmação."},
   {i:4,tipo:"E-mail",dias:-8,resumo:"1º toque. Resposta pedindo contato após a publicação do edital."},
   {i:4,tipo:"LinkedIn",dias:-4,resumo:"2º toque com case de rede de postos."},
-  {i:6,tipo:"Nota interna",dias:-14,resumo:"Contrato assinado. 74 lojas, 19.800 entregas previstas nos primeiros 3 meses."},
+  {i:6,tipo:"Nota interna",dias:-14,resumo:"Contrato assinado. 74 lojas, 6.600 entregas/mês previstas."},
   {i:7,tipo:"Nota interna",dias:-20,resumo:"Perdido para concorrente com preço por entrega 8% abaixo."}
 ];
 
@@ -899,7 +910,7 @@ function renderFunil(){
   ETAPAS.forEach(e => porEtapa[e.k].sort((a,b) => {
     const pa = proximaAtividade(a.id), pb = proximaAtividade(b.id);
     const da = pa ? diasAte(pa.data) : null, dbb = pb ? diasAte(pb.data) : null;
-    if(da === null && dbb === null) return (b.entregas90||0)-(a.entregas90||0);
+    if(da === null && dbb === null) return (b.entregasMes||0)-(a.entregasMes||0);
     if(da === null) return -1; if(dbb === null) return 1;
     return da - dbb;
   }));
@@ -914,16 +925,16 @@ function renderFunil(){
   }
 
   const faixa = ETAPAS.map(e => {
-    const cs = porEtapa[e.k], val = cs.reduce((s,c) => s+(Number(c.entregas90)||0), 0);
+    const cs = porEtapa[e.k], val = cs.reduce((s,c) => s+(Number(c.entregasMes)||0), 0);
     return '<div class="funil-item" style="--st:'+e.cor+'">' +
       '<span class="funil-nome">'+esc(e.nome)+'</span>' +
       '<span class="funil-valor">'+(val ? numCurto(val) : "—")+'</span>' +
-      '<span class="funil-qtd">'+(val ? "entregas/90d · " : "")+cs.length+(cs.length===1?" conta":" contas")+'</span></div>';
+      '<span class="funil-qtd">'+(val ? "entregas/mês · " : "")+cs.length+(cs.length===1?" conta":" contas")+'</span></div>';
   }).join("");
 
   const colunas = ETAPAS.map(e => {
     const cs = porEtapa[e.k];
-    const val = cs.reduce((s,c) => s+(Number(c.entregas90)||0), 0);
+    const val = cs.reduce((s,c) => s+(Number(c.entregasMes)||0), 0);
     const lojas = cs.reduce((s,c) => s+(Number(c.lojas)||0), 0);
     const corpo = cs.length ? cs.map(c => cardHTML(c,e)).join("") : '<div class="col-empty">Nenhuma conta nesta etapa</div>';
     return '<section class="col" data-etapa="'+e.k+'" style="--st:'+e.cor+'">' +
@@ -956,15 +967,18 @@ function cardHTML(c, e){
     : c.status === "perdido" ? '<span class="chip" style="color:var(--st-perdido)">Perdida</span>'
     : c.status === "congelado" ? '<span class="chip">Congelada</span>' : "";
   const dono = Store.perfis.size > 1 && c.responsavel ? '<span class="chip dono">'+esc(primeiroNome(Store.nomeDe(c.responsavel)))+'</span>' : "";
+  const temp = c.temperatura ? '<span class="chip" style="color:'+COR_TEMP[c.temperatura]+';border-color:currentColor;font-weight:700">'+esc(c.temperatura)+'</span>' : "";
+  const linhaBase = [esc(c.setor || "Setor não informado"),
+                     c.lojas ? num(c.lojas)+" lojas" : null,
+                     c.praca ? esc(c.praca) : null].filter(Boolean).join(" · ");
   return '<button class="card '+(c.status !== "ativo" ? esc(c.status) : "")+'" draggable="true" data-id="'+esc(c.id)+'" style="--st:'+e.cor+'">' +
     '<span class="card-top"><span class="card-emp">'+esc(c.empresa)+'</span>' +
-    '<span class="card-num">'+numCurto(c.entregas90)+'<small>entregas/90d</small></span></span>' +
+    '<span class="card-num">'+numCurto(c.entregasMes)+'<small>entregas/mês</small></span></span>' +
     '<span class="card-meta">'+esc(c.contatoNome || "Contato não definido")+
-      (c.contatoCargo ? ' · '+esc(c.contatoCargo) : "")+'<br>'+
-      esc(c.setor || "Setor não informado")+' · '+num(c.lojas)+' lojas</span>' +
+      (c.contatoCargo ? ' · '+esc(c.contatoCargo) : "")+'<br>'+linhaBase+'</span>' +
     linhaAtiv +
     '<span class="card-prog"><i style="width:'+progressoEtapa(c)+'%"></i></span>' +
-    '<span class="card-foot">'+chipPrazo+chipStatus+dono+(c.exemplo ? '<span class="chip ex">exemplo</span>' : "")+'</span></button>';
+    '<span class="card-foot">'+chipPrazo+temp+chipStatus+dono+(c.exemplo ? '<span class="chip ex">exemplo</span>' : "")+'</span></button>';
 }
 
 function ligarQuadro(){
@@ -1040,7 +1054,7 @@ function renderAgenda(){
           '<span class="l-data">—</span>' +
           '<span class="l-tipo"><i></i>Nada marcado</span>' +
           '<button class="l-emp" data-id="'+esc(c.id)+'">'+esc(c.empresa)+'<small>'+esc(e.nome)+' · '+num(c.lojas)+' lojas</small></button>' +
-          '<span class="l-desc">'+numCurto(c.entregas90)+' entregas previstas nos primeiros 3 meses</span>' +
+          '<span class="l-desc">'+numCurto(c.entregasMes)+' entregas/mês de potencial</span>' +
           '<span class="l-acao"><button class="btn btn-sm" data-agendar="'+esc(c.id)+'">Agendar</button></span></div>';
       }).join("") + '</div></section>';
   }
@@ -1078,9 +1092,9 @@ function renderIndicadores(){
   const perdidas = base.filter(c => c.status === "perdido");
   const soma = (arr, campo) => arr.reduce((s,c) => s+(Number(c[campo])||0), 0);
 
-  const potencial = soma(ativas,"entregas90");
-  const ponderado = ativas.reduce((s,c) => s+(Number(c.entregas90)||0)*((Number(c.probabilidade)||0)/100), 0);
-  const ganho = soma(ganhas,"entregas90");
+  const potencial = soma(ativas,"entregasMes");
+  const ponderado = ativas.reduce((s,c) => s+(Number(c.entregasMes)||0)*((Number(c.probabilidade)||0)/100), 0);
+  const ganho = soma(ganhas,"entregasMes");
   const lojasAtivas = soma(ativas,"lojas");
   const decididas = ganhas.length + perdidas.length;
   const taxa = decididas ? Math.round(ganhas.length/decididas*100) : null;
@@ -1091,22 +1105,22 @@ function renderIndicadores(){
   const ciclo = ciclos.length ? Math.round(ciclos.reduce((a,b) => a+b,0)/ciclos.length) : null;
 
   const tiles = [
-    {v:numCurto(potencial), r:"Potencial em aberto", d:"Entregas em 90 dias · "+ativas.length+" contas"},
+    {v:numCurto(potencial), r:"Potencial em aberto", d:"Entregas por mês · "+ativas.length+" contas"},
     {v:numCurto(Math.round(ponderado)), r:"Potencial ponderado", d:"Ajustado pela probabilidade da etapa"},
-    {v:numCurto(ganho), r:"Entregas conquistadas", d:ganhas.length+" contas fechadas"},
+    {v:numCurto(ganho), r:"Entregas/mês conquistadas", d:ganhas.length+" contas fechadas"},
     {v:(taxa===null?"—":taxa+"%"), r:"Taxa de conversão", d:decididas?ganhas.length+" de "+decididas+" decididas":"Sem contas decididas"},
     {v:num(lojasAtivas), r:"Lojas em negociação", d:"Soma das redes ativas no funil"},
-    {v:porLoja?num(porLoja):"—", r:"Entregas por loja", d:"Média das contas em aberto (90 d)"},
-    {v:ganhas.length?numCurto(mediaGanha):"—", r:"Média por conta ganha", d:"Entregas nos primeiros 3 meses"},
+    {v:porLoja?num(porLoja):"—", r:"Entregas por loja", d:"Média mensal das contas em aberto"},
+    {v:ganhas.length?numCurto(mediaGanha):"—", r:"Média por conta ganha", d:"Entregas por mês"},
     {v:(ciclo===null?"—":ciclo+" d"), r:"Ciclo médio", d:"Da criação ao fechamento"},
     {v:String(atrasadas), r:"Atividades em atraso", d:"Passaram da data combinada", alerta:atrasadas>0}
   ].map(t => '<div class="tile"><div class="eyebrow">'+esc(t.r)+'</div>' +
       '<div class="v"'+(t.alerta?' style="color:var(--danger)"':"")+'>'+esc(t.v)+'</div>' +
       '<div class="d">'+esc(t.d)+'</div></div>').join("");
 
-  const maxV = Math.max(1, ...ETAPAS.map(e => soma(ativas.filter(c => c.etapa === e.k), "entregas90")));
+  const maxV = Math.max(1, ...ETAPAS.map(e => soma(ativas.filter(c => c.etapa === e.k), "entregasMes")));
   const barras = ETAPAS.map(e => {
-    const cs = ativas.filter(c => c.etapa === e.k), v = soma(cs,"entregas90");
+    const cs = ativas.filter(c => c.etapa === e.k), v = soma(cs,"entregasMes");
     return '<div class="barra" style="--st:'+e.cor+'">' +
       '<span class="b-nome">'+esc(e.nome)+'</span>' +
       '<span class="b-trilho"><span class="b-fill" style="width:'+Math.round(v/maxV*100)+'%"></span></span>' +
@@ -1121,6 +1135,23 @@ function renderIndicadores(){
       '<span class="v">'+as.length+(atr?' · <span style="color:var(--danger)">'+atr+' em atraso</span>':"")+'</span></div>';
   }).join("");
 
+  const painelTemp = '<div class="painel"><h3>Temperatura e fit</h3>' +
+    '<p class="desc">Leitura do hunter sobre engajamento e aderência à operação Bee, nas contas em aberto.</p>' +
+    TEMPERATURAS.map(t => {
+      const cs = ativas.filter(c => c.temperatura === t);
+      return '<div class="kv" style="--at:'+COR_TEMP[t]+'"><span class="k"><i></i>'+esc(t)+'</span>' +
+        '<span class="v">'+cs.length+' · '+numCurto(soma(cs,"entregasMes"))+'</span></div>';
+    }).join("") +
+    (ativas.some(c => !c.temperatura)
+      ? '<div class="kv"><span class="k" style="color:var(--ink-3)">Sem classificação</span>' +
+        '<span class="v">'+ativas.filter(c => !c.temperatura).length+'</span></div>' : "") +
+    '<div style="height:10px"></div>' +
+    FITS.map(f => {
+      const cs = ativas.filter(c => c.fit === f);
+      if(!cs.length) return "";
+      return '<div class="kv"><span class="k">Fit '+esc(f)+'</span><span class="v">'+cs.length+' · '+numCurto(soma(cs,"entregasMes"))+'</span></div>';
+    }).join("") + '</div>';
+
   let painelEquipe = "";
   if(Store.perfis.size > 1){
     painelEquipe = '<div class="painel"><h3>Por responsável</h3><p class="desc">Como o funil está dividido no time.</p>' +
@@ -1128,7 +1159,7 @@ function renderIndicadores(){
         const suas = base.filter(c => c.responsavel === p.id);
         const abertas = suas.filter(c => c.status === "ativo");
         return '<div class="kv"><span class="k">'+esc(p.nome)+(p.papel==="gerente"?" · gerente":"")+'</span>' +
-          '<span class="v">'+abertas.length+' em aberto · '+numCurto(soma(abertas,"entregas90"))+'</span></div>';
+          '<span class="v">'+abertas.length+' em aberto · '+numCurto(soma(abertas,"entregasMes"))+'</span></div>';
       }).join("") + '</div>';
   }
 
@@ -1136,7 +1167,7 @@ function renderIndicadores(){
   base.forEach(c => {
     const o = c.origem || "Não informada";
     porOrigem[o] = porOrigem[o] || {n:0, g:0, v:0};
-    porOrigem[o].n++; porOrigem[o].v += Number(c.entregas90)||0;
+    porOrigem[o].n++; porOrigem[o].v += Number(c.entregasMes)||0;
     if(c.status === "ganho") porOrigem[o].g++;
   });
   const origemHTML = Object.entries(porOrigem).sort((a,b) => b[1].v - a[1].v).map(([o,d]) =>
@@ -1152,9 +1183,9 @@ function renderIndicadores(){
   app.innerHTML = '<div class="page">' +
     '<div class="tiles">'+tiles+'</div>' +
     '<div class="painel"><h3>Potencial em aberto por etapa</h3>' +
-    '<p class="desc">Entregas previstas nos primeiros 3 meses, somadas por etapa do funil.</p>' +
+    '<p class="desc">Entregas por mês, somadas por etapa do funil.</p>' +
     '<div class="barras">'+barras+'</div></div>' +
-    '<div class="duo">' + painelEquipe +
+    '<div class="duo">' + painelEquipe + painelTemp +
       '<div class="painel"><h3>Atividades pendentes por tipo</h3><p class="desc">O que está agendado e o que passou da data.</p>'+porTipo+'</div>' +
       '<div class="painel"><h3>Origem da conta</h3><p class="desc">Quantidade, potencial de entregas e fechamentos por canal.</p>'+origemHTML+'</div>' +
       '<div class="painel"><h3>Motivos de perda</h3><p class="desc">Onde o funil está quebrando.</p>'+motivoHTML+'</div>' +
@@ -1174,7 +1205,8 @@ function contaEmEdicao(){
     if(!rascunho) rascunho = {
       id:uid(), empresa:"", cnpj:"", setor:"", porte:PORTES[1], origem:ORIGENS[0],
       contatoNome:"", contatoCargo:"", contatoEmail:"", contatoTel:"",
-      decisorNome:"", decisorCargo:"", entregas90:0, lojas:0,
+      decisorNome:"", decisorCargo:"", praca:"", entregasMes:0, lojas:0,
+      temperatura:"", sistema:"", raioKm:"", fit:"", previsaoFechamento:"",
       etapa:"prospeccao", status:"ativo", probabilidade:ETAPAS[0].prob,
       checklist:{}, notas:"", motivoPerda:"", responsavel:Auth.uid,
       entradaEtapa:hojeISO(), exemplo:false, criadoEm:hojeISO(), atualizadoEm:hojeISO()
@@ -1239,18 +1271,22 @@ function selResponsavel(sel){
 
 function formDados(c, e, diasNaEtapa, prox){
   const statusTxt = {ativo:"Em aberto", ganho:"Ganha", perdido:"Perdida", congelado:"Congelada"}[c.status] || "Em aberto";
-  const porLoja = Number(c.lojas) ? Math.round((Number(c.entregas90)||0)/Number(c.lojas)) : 0;
+  const porLoja = Number(c.lojas) ? Math.round((Number(c.entregasMes)||0)/Number(c.lojas)) : 0;
   return (UI.novaConta ? "" :
     '<div class="status-bar">' +
       '<span class="status-atual"><i></i>'+esc(e.nome)+'</span>' +
       '<span class="status-atual">'+esc(statusTxt)+'</span>' +
       (diasNaEtapa !== null ? '<span class="status-atual mono">'+diasNaEtapa+' d nesta etapa</span>' : "") +
+      (c.temperatura ? '<span class="status-atual" style="color:'+COR_TEMP[c.temperatura]+'">'+esc(c.temperatura)+'</span>' : "") +
+      (c.fit ? '<span class="status-atual">Fit '+esc(c.fit)+'</span>' : "") +
       (c.motivoPerda ? '<span class="status-atual" style="color:var(--danger)">'+esc(c.motivoPerda)+'</span>' : "") +
     '</div>' +
     '<div class="derivado">' +
-      '<div><span class="dv">'+num(c.entregas90)+'</span><span class="dl">entregas nos 3 primeiros meses</span></div>' +
+      '<div><span class="dv">'+num(c.entregasMes)+'</span><span class="dl">entregas por mês</span></div>' +
       '<div><span class="dv">'+num(c.lojas)+'</span><span class="dl">lojas na rede</span></div>' +
       '<div><span class="dv">'+(porLoja?num(porLoja):"—")+'</span><span class="dl">entregas por loja</span></div>' +
+      (c.raioKm !== "" ? '<div><span class="dv">'+esc(c.raioKm)+' km</span><span class="dl">raio de entrega</span></div>' : "") +
+      (c.sistema ? '<div><span class="dv" style="font-size:13px">'+esc(c.sistema)+'</span><span class="dl">integração</span></div>' : "") +
       '<div><span class="dv">'+(prox ? esc(fmtData(prox.data)) : "—")+'</span><span class="dl">'+(prox ? esc(prox.tipo) : "sem atividade")+'</span></div>' +
     '</div>') +
 
@@ -1259,19 +1295,28 @@ function formDados(c, e, diasNaEtapa, prox){
     '<div class="grade2">' +
       '<div class="campo"><label for="f-cnpj">CNPJ</label><input id="f-cnpj" class="mono" value="'+esc(c.cnpj)+'" placeholder="00.000.000/0001-00"></div>' +
       '<div class="campo"><label for="f-setor">Setor</label><input id="f-setor" value="'+esc(c.setor)+'" placeholder="Ex.: Varejo alimentar"></div>' +
+      '<div class="campo"><label for="f-praca">Praça</label><input id="f-praca" value="'+esc(c.praca)+'" placeholder="Ex.: Sudeste, Nacional"></div>' +
       '<div class="campo"><label for="f-porte">Porte da rede</label><select id="f-porte">'+opcoes(PORTES, c.porte)+'</select></div>' +
       '<div class="campo"><label for="f-origem">Origem</label><select id="f-origem">'+opcoes(ORIGENS, c.origem)+'</select></div>' +
+      '<div class="campo"><label for="f-temp">Temperatura</label>' +
+        '<select id="f-temp"><option value="">Não classificada</option>'+opcoes(TEMPERATURAS, c.temperatura)+'</select></div>' +
       '<div class="campo"><label for="f-resp-conta">Responsável</label><select id="f-resp-conta">'+selResponsavel(c.responsavel)+'</select></div>' +
     '</div></fieldset><hr class="sep">' +
 
   '<fieldset class="bloco"><legend>Dimensionamento do lead</legend>' +
     '<div class="grade2">' +
-      '<div class="campo"><label for="f-entregas">Potencial de entregas finalizadas nos primeiros 3 meses</label>' +
-        '<input id="f-entregas" class="mono" type="number" min="0" step="100" value="'+(Number(c.entregas90)||0)+'">' +
-        '<span class="hint">Volume que a rede deve rodar no trimestre de arranque.</span></div>' +
+      '<div class="campo"><label for="f-mes">Potencial de entregas por mês</label>' +
+        '<input id="f-mes" class="mono" type="number" min="0" step="100" value="'+(Number(c.entregasMes)||0)+'">' +
+        '<span class="hint">Volume mensal que a rede deve rodar em regime.</span></div>' +
       '<div class="campo"><label for="f-lojas">Total de lojas da rede</label>' +
         '<input id="f-lojas" class="mono" type="number" min="0" step="1" value="'+(Number(c.lojas)||0)+'">' +
         '<span class="hint">Inclui todas as unidades, mesmo as fora do piloto.</span></div>' +
+      '<div class="campo"><label for="f-raio">Raio de entrega (km)</label>' +
+        '<input id="f-raio" class="mono" type="number" min="0" step="1" value="'+esc(c.raioKm)+'"></div>' +
+      '<div class="campo"><label for="f-sistema">Sistema / integração</label>' +
+        '<input id="f-sistema" value="'+esc(c.sistema)+'" placeholder="Ex.: Vtex, Stone, Frete Rápido"></div>' +
+      '<div class="campo"><label for="f-fit">Fit com a operação Bee</label>' +
+        '<select id="f-fit"><option value="">Não avaliado</option>'+opcoes(FITS, c.fit)+'</select></div>' +
     '</div></fieldset><hr class="sep">' +
 
   '<fieldset class="bloco"><legend>Interlocutores</legend>' +
@@ -1288,6 +1333,8 @@ function formDados(c, e, diasNaEtapa, prox){
     '<div class="grade2">' +
       '<div class="campo"><label for="f-etapa">Etapa</label><select id="f-etapa">'+ETAPAS.map(x => '<option value="'+x.k+'"'+(x.k===c.etapa?" selected":"")+">"+esc(x.nome)+"</option>").join("")+'</select></div>' +
       '<div class="campo"><label for="f-prob">Probabilidade (%)</label><input id="f-prob" class="mono" type="number" min="0" max="100" step="5" value="'+(Number(c.probabilidade)||0)+'"></div>' +
+      '<div class="campo"><label for="f-previsao">Previsão de fechamento</label>' +
+        '<input id="f-previsao" type="date" value="'+esc(String(c.previsaoFechamento||"").slice(0,10))+'"></div>' +
     '</div>' +
     '<div class="campo"><label for="f-notas">Notas da conta</label><textarea id="f-notas" placeholder="Estrutura de compra, operação logística atual, concorrentes, sazonalidade…">'+esc(c.notas)+'</textarea></div>' +
     (UI.novaConta ? '<p class="hint" style="margin:-6px 0 0">Depois de criar, agende a primeira atividade na aba <strong>Atividades</strong>.</p>' : "") +
@@ -1393,9 +1440,15 @@ function lerForm(c){
   c.setor = g("f-setor").trim();
   c.porte = g("f-porte");
   c.origem = g("f-origem");
+  c.praca = g("f-praca").trim();
+  c.temperatura = g("f-temp");
   c.responsavel = g("f-resp-conta") || c.responsavel;
-  c.entregas90 = Math.max(0, Number(g("f-entregas")) || 0);
+  c.entregasMes = Math.max(0, Number(g("f-mes")) || 0);
   c.lojas = Math.max(0, Number(g("f-lojas")) || 0);
+  c.raioKm = g("f-raio") === "" ? "" : Math.max(0, Number(g("f-raio")) || 0);
+  c.sistema = g("f-sistema").trim();
+  c.fit = g("f-fit");
+  c.previsaoFechamento = g("f-previsao") || "";
   c.contatoNome = g("f-cnome").trim();
   c.contatoCargo = g("f-ccargo").trim();
   c.contatoEmail = g("f-cmail").trim();
@@ -1432,8 +1485,8 @@ function ligarDrawer(c, e){
     c.status = "ganho"; c.etapa = "fechamento"; c.probabilidade = 100; c.motivoPerda = "";
     Store.salvarConta(c);
     Store.salvarInteracao({id:uid(), contaId:c.id, tipo:"Nota interna", data:hojeISO(),
-      resumo:"Conta ganha. "+num(c.lojas)+" lojas, "+num(c.entregas90)+" entregas previstas nos primeiros 3 meses."});
-    toast("🎉 "+c.empresa+" fechada — "+numCurto(c.entregas90)+" entregas/90d"); renderDrawer();
+      resumo:"Conta ganha. "+num(c.lojas)+" lojas, "+num(c.entregasMes)+" entregas/mês previstas."});
+    toast("🎉 "+c.empresa+" fechada — "+numCurto(c.entregasMes)+" entregas/mês"); renderDrawer();
   };
   const perdido = document.getElementById("dr-perdido");
   if(perdido) perdido.onclick = () => {
