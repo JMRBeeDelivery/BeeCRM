@@ -257,6 +257,45 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .vazio{padding:28px;text-align:center;color:var(--ink-3);background:var(--surface);border:1px dashed var(--line);border-radius:11px}
 .vazio .btn{margin-top:12px}
 
+/* ---------- metas ---------- */
+.metas-head{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.metas-head h2{font-size:17px;font-weight:700}
+.metas-sub{font-size:12.5px;color:var(--ink-3);margin:2px 0 0}
+.metas-nav{display:flex;gap:6px;margin-left:auto}
+.metas-nav .btn[disabled]{opacity:.38;cursor:default}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:12px}
+.meta-grid.dois{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));max-width:760px}
+.meta-card{
+  background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;
+  padding:14px 16px 15px;border-top:3px solid var(--line);
+}
+.meta-card.ok{border-top-color:var(--ok)}
+.meta-card.atras{border-top-color:var(--danger)}
+.meta-num{display:flex;align-items:baseline;gap:6px;margin:6px 0 9px}
+.meta-num b{font-family:var(--f-display);font-size:33px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
+.meta-num span{font-family:var(--f-mono);font-size:14px;color:var(--ink-3)}
+.meta-trilho{position:relative;height:8px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line-soft);overflow:hidden}
+.meta-trilho i{display:block;height:100%;border-radius:4px}
+.meta-trilho u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink-3);opacity:.55;text-decoration:none}
+.meta-sit{font-size:11.5px;font-weight:600;margin-top:8px}
+.meta-desc{font-size:11px;color:var(--ink-3);margin-top:3px;line-height:1.4}
+
+.meta-hist{border-collapse:collapse;width:100%;min-width:520px}
+.meta-hist th{font-family:var(--f-mono);font-size:10.5px;font-weight:500;color:var(--ink-3);padding:0 4px 8px;text-align:center}
+.meta-hist tbody th{font-family:var(--f-body);font-size:12px;font-weight:500;color:var(--ink-2);text-align:left;padding:6px 12px 6px 0;white-space:nowrap}
+.meta-hist th.atual,.meta-hist td.atual{color:var(--ink);font-weight:700}
+.meta-hist td{text-align:center;padding:4px;vertical-align:bottom}
+.meta-hist .hcel{
+  display:block;width:100%;max-width:34px;margin:0 auto;height:26px;border-radius:3px;
+  background:var(--surface-2);position:relative;overflow:hidden;
+}
+.meta-hist .hcel::after{content:"";position:absolute;left:0;right:0;bottom:0;height:var(--h);background:var(--ink-3);opacity:.35}
+.meta-hist .hcel.ok::after{background:var(--ok);opacity:1}
+.meta-hist .hcel.parcial::after{background:var(--mel-2);opacity:1}
+.meta-hist .hcel.zero::after{height:2px;background:var(--line);opacity:1}
+.meta-hist em{display:block;font-family:var(--f-mono);font-size:10px;font-style:normal;color:var(--ink-3);margin-top:3px}
+.metas-nota{font-size:11.5px;color:var(--ink-3);line-height:1.6;margin-top:22px;max-width:70ch}
+
 /* ---------- indicadores ---------- */
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:10px;margin-bottom:24px}
 .tile{background:var(--surface);border:1px solid var(--line-soft);border-radius:11px;padding:13px 15px}
@@ -364,6 +403,7 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:6px 0 18px}
     <div class="views" role="tablist" aria-label="Visões">
       <button role="tab" data-view="funil" aria-selected="true">Funil</button>
       <button role="tab" data-view="agenda" aria-selected="false">Agenda<span class="aviso" id="aviso-agenda" hidden></span></button>
+      <button role="tab" data-view="metas" aria-selected="false">Metas</button>
       <button role="tab" data-view="indicadores" aria-selected="false">Indicadores</button>
     </div>
     <div class="spacer"></div>
@@ -434,6 +474,21 @@ const TIPOS_NEG = new Set(["No-show"]);
 const ORIGENS = ["Outbound frio","LinkedIn / social selling","Indicação","Evento / feira","Inbound","Parceiro","Base reativada","Licitação / RFP"];
 const PORTES = ["Rede nacional (300+ lojas)","Rede regional (100–299)","Rede local (20–99)","Até 20 lojas","Grupo econômico"];
 const MOTIVOS_PERDA = ["Preço por entrega","Sem prioridade agora","Concorrente","Sem fit com o ICP","Decisor não engajou","Processo interno travado","Sem resposta","Nuvem de entregadores"];
+/* ------------------------------------------------------------------
+   METAS DO HUNTER — para mudar um número, altere aqui e republique.
+   Cada meta conta um evento datado, não um estado do funil.
+   ------------------------------------------------------------------ */
+const METAS_SEMANA = [
+  {k:"prospeccoes",  meta:10, nome:"Novas prospecções",  desc:"Empresas novas cadastradas no CRM"},
+  {k:"conexoes",     meta:5,  nome:"Novas conexões",     desc:"Leads que avançaram para a etapa Conexão"},
+  {k:"agendamentos", meta:2,  nome:"Reuniões agendadas", desc:"Atividades do tipo Reunião marcadas na agenda"},
+  {k:"reunioes",     meta:1,  nome:"Reuniões realizadas",desc:"Atividades do tipo Reunião concluídas"}
+];
+const METAS_MES = [
+  {k:"negociacoes",  meta:4,  nome:"Leads em negociação", desc:"Leads que avançaram para a etapa Negociação"},
+  {k:"fechamentos",  meta:1,  nome:"Fechamentos",         desc:"Contas marcadas como ganhas"}
+];
+
 const TEMPERATURAS = ["Quente","Morno","Frio"];
 const COR_TEMP = {Quente:"var(--danger)", Morno:"var(--at-reuniao)", Frio:"var(--at-email)"};
 const FITS = ["Alto","Médio","Baixo"];
@@ -494,6 +549,7 @@ function contaDoBanco(r){
     etapa:r.etapa||"prospeccao", status:r.status||"ativo", probabilidade:r.probabilidade||0,
     motivoPerda:r.motivo_perda||"", notas:r.notas||"", checklist:r.checklist||{},
     responsavel:r.responsavel||null, entradaEtapa:r.entrada_etapa||hojeISO(),
+    fechadaEm:r.fechada_em||"",
     exemplo:!!r.exemplo, criadoEm:r.criado_em||"", atualizadoEm:r.atualizado_em||""
   };
 }
@@ -509,18 +565,21 @@ function contaParaBanco(c){
     lojas:c.lojas, etapa:c.etapa, status:c.status,
     probabilidade:c.probabilidade, motivo_perda:c.motivoPerda, notas:c.notas,
     checklist:c.checklist||{}, responsavel:c.responsavel, entrada_etapa:c.entradaEtapa,
+    fechada_em:c.fechadaEm || null,
     exemplo:!!c.exemplo, criado_por:Auth.uid
   };
 }
 const ativDoBanco = r => ({id:r.id, contaId:r.conta_id, tipo:r.tipo, data:r.data, hora:r.hora||"",
   descricao:r.descricao||"", status:r.status||"pendente", concluidaEm:r.concluida_em||null,
-  exemplo:!!r.exemplo, criadoPor:r.criado_por});
+  criadoEm:r.criado_em||"", exemplo:!!r.exemplo, criadoPor:r.criado_por});
 const ativParaBanco = a => ({id:a.id, conta_id:a.contaId, tipo:a.tipo, data:a.data, hora:a.hora||"",
   descricao:a.descricao||"", status:a.status, concluida_em:a.concluidaEm||null,
   exemplo:!!a.exemplo, criado_por:Auth.uid});
 const intDoBanco = r => ({id:r.id, contaId:r.conta_id, tipo:r.tipo, data:r.data, resumo:r.resumo||"",
+  etapaDe:r.etapa_de||"", etapaPara:r.etapa_para||"",
   exemplo:!!r.exemplo, criadoPor:r.criado_por});
 const intParaBanco = i => ({id:i.id, conta_id:i.contaId, tipo:i.tipo, data:i.data, resumo:i.resumo,
+  etapa_de:i.etapaDe||null, etapa_para:i.etapaPara||null,
   exemplo:!!i.exemplo, criado_por:Auth.uid});
 
 /* ============================================================
@@ -828,7 +887,8 @@ async function carregarExemplos(){
 /* ============================================================
    7. Estado e seletores
    ============================================================ */
-const UI = { view:"funil", busca:"", fStatus:"ativos", fResp:"", aberta:null, aba:"dados", arrastando:null, novaConta:false, concluindo:null };
+const UI = { view:"funil", busca:"", fStatus:"ativos", fResp:"", aberta:null, aba:"dados",
+             arrastando:null, novaConta:false, concluindo:null, semana:0, mes:0 };
 
 function contasVisiveis(){
   const q = UI.busca.trim().toLowerCase();
@@ -863,6 +923,35 @@ function totalAtrasadas(){
     return c && c.status === "ativo" && diasAte(a.data) < 0;
   }).length;
 }
+/* ---------- períodos e apuração das metas ---------- */
+function inicioSemana(d){
+  const x = new Date(d); x.setHours(0,0,0,0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));   // segunda-feira
+  return x;
+}
+function somaDias(d, n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function inicioMes(d){ const x = new Date(d); x.setHours(0,0,0,0); x.setDate(1); return x; }
+function proximoMes(d){ const x = inicioMes(d); x.setMonth(x.getMonth()+1); return x; }
+const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+
+/* Conta os eventos de um período [ini, fim). Só conta contas reais. */
+function apurar(ini, fim){
+  const base = [...Store.contas.values()].filter(c => !c.exemplo && (!UI.fResp || c.responsavel === UI.fResp));
+  const ids = new Set(base.map(c => c.id));
+  const dentro = s => { const d = parseISO(s); return !!d && d >= ini && d < fim; };
+  const transicoes = alvo => [...Store.interacoes.values()]
+    .filter(i => ids.has(i.contaId) && i.etapaPara === alvo && dentro(i.data)).length;
+  const ativs = [...Store.atividades.values()].filter(a => ids.has(a.contaId) && a.tipo === "Reunião");
+  return {
+    prospeccoes:  base.filter(c => dentro(c.criadoEm)).length,
+    conexoes:     transicoes("conexao"),
+    agendamentos: ativs.filter(a => dentro(a.criadoEm)).length,
+    reunioes:     ativs.filter(a => a.status === "concluida" && dentro(a.concluidaEm)).length,
+    negociacoes:  transicoes("negociacao"),
+    fechamentos:  base.filter(c => c.status === "ganho" && dentro(c.fechadaEm)).length
+  };
+}
+
 function montarFiltroResponsavel(){
   const sel = document.getElementById("f-resp");
   const atual = UI.fResp;
@@ -886,6 +975,7 @@ function render(){
   av.hidden = n === 0; av.textContent = n;
   if(UI.view === "funil") renderFunil();
   else if(UI.view === "agenda") renderAgenda();
+  else if(UI.view === "metas") renderMetas();
   else renderIndicadores();
   renderDrawer();
 }
@@ -1006,10 +1096,12 @@ function ligarQuadro(){
 function moverEtapa(id, etapa){
   const c = Store.contas.get(id);
   if(!c || c.etapa === etapa) return;
-  const de = ETAPA[c.etapa] ? ETAPA[c.etapa].nome : c.etapa;
+  const etapaAnterior = c.etapa;
+  const de = ETAPA[etapaAnterior] ? ETAPA[etapaAnterior].nome : etapaAnterior;
   c.etapa = etapa; c.probabilidade = ETAPA[etapa].prob; c.entradaEtapa = hojeISO();
   Store.salvarConta(c);
   Store.salvarInteracao({id:uid(), contaId:id, tipo:"Nota interna", data:hojeISO(),
+    etapaDe:etapaAnterior, etapaPara:etapa,
     resumo:"Etapa alterada: "+de+" → "+ETAPA[etapa].nome+" (por "+primeiroNome(Auth.perfil.nome)+")"});
   toast(c.empresa+" → "+ETAPA[etapa].nome);
 }
@@ -1080,6 +1172,111 @@ function concluirAtividade(a, resumo){
   const conta = Store.contas.get(a.contaId);
   toast(restantes ? "Registrado no histórico."
     : "Registrado. "+(conta ? conta.empresa : "A conta")+" ficou sem próxima atividade — agende agora.");
+}
+
+/* ---------- Metas ---------- */
+function cartaoMeta(def, feito, esperado, corrente){
+  const pct = Math.min(100, Math.round(feito / def.meta * 100));
+  const batida = feito >= def.meta;
+  const atras = corrente && !batida && feito < esperado;
+  const cor = batida ? "var(--ok)" : atras ? "var(--danger)" : "var(--mel-2)";
+  const situacao = batida ? "Meta batida"
+    : corrente ? (atras ? "Faltam " + (def.meta - feito) + " · abaixo do ritmo"
+                        : "Faltam " + (def.meta - feito) + " · no ritmo")
+    : "Fechou em " + feito + " de " + def.meta;
+  return '<div class="meta-card'+(batida?" ok":atras?" atras":"")+'">' +
+    '<div class="eyebrow">'+esc(def.nome)+'</div>' +
+    '<div class="meta-num"><b>'+feito+'</b><span>/ '+def.meta+'</span></div>' +
+    '<div class="meta-trilho"><i style="width:'+pct+'%;background:'+cor+'"></i>' +
+      (corrente && !batida ? '<u style="left:'+Math.min(100, esperado/def.meta*100)+'%"></u>' : "") +
+    '</div>' +
+    '<div class="meta-sit" style="color:'+(batida?"var(--ok)":atras?"var(--danger)":"var(--ink-2)")+'">'+esc(situacao)+'</div>' +
+    '<div class="meta-desc">'+esc(def.desc)+'</div></div>';
+}
+
+function renderMetas(){
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+  // --- semana ---
+  const iniSem = somaDias(inicioSemana(hoje), UI.semana * 7);
+  const fimSem = somaDias(iniSem, 7);
+  const semanaCorrente = UI.semana === 0;
+  const diaUtil = Math.min(5, Math.max(0, (hoje.getDay() === 0 ? 5 : Math.min(hoje.getDay(), 5))));
+  const ritmoSem = semanaCorrente ? diaUtil / 5 : 1;
+  const som = apurar(iniSem, fimSem);
+
+  // --- mês ---
+  const iniMes = inicioMes(new Date(hoje.getFullYear(), hoje.getMonth() + UI.mes, 1));
+  const fimMes = proximoMes(iniMes);
+  const mesCorrente = UI.mes === 0;
+  const diasNoMes = Math.round((fimMes - iniMes) / 86400000);
+  const ritmoMes = mesCorrente ? hoje.getDate() / diasNoMes : 1;
+  const mesa = apurar(iniMes, fimMes);
+
+  const quem = UI.fResp ? Store.nomeDe(UI.fResp) : "toda a equipe";
+  const faixa = fmtData(iso(iniSem)) + " a " + fmtData(iso(somaDias(fimSem, -1)));
+
+  // --- histórico de 8 semanas ---
+  const colunas = [];
+  for(let k = 7; k >= 0; k--){
+    const i = somaDias(inicioSemana(hoje), -k * 7);
+    colunas.push({rot:String(i.getDate()).padStart(2,"0")+"/"+String(i.getMonth()+1).padStart(2,"0"),
+                  dados:apurar(i, somaDias(i, 7)), atual:k === 0});
+  }
+  const histLinhas = METAS_SEMANA.map(d =>
+    '<tr><th>'+esc(d.nome)+'</th>' + colunas.map(col => {
+      const v = col.dados[d.k], pct = Math.min(100, v / d.meta * 100);
+      const cls = v >= d.meta ? "ok" : v > 0 ? "parcial" : "zero";
+      return '<td'+(col.atual?' class="atual"':"")+'><span class="hcel '+cls+'" ' +
+        'style="--h:'+Math.max(6, pct)+'%" title="'+v+' de '+d.meta+'"></span><em>'+v+'</em></td>';
+    }).join("") + '</tr>').join("");
+
+  app.innerHTML = '<div class="page">' +
+    '<div class="metas-head">' +
+      '<div><h2>Metas semanais</h2>' +
+        '<p class="metas-sub">Semana de '+esc(faixa)+' · '+esc(quem)+'</p></div>' +
+      '<div class="metas-nav">' +
+        '<button class="btn btn-sm" data-sem="-1" aria-label="Semana anterior">◀</button>' +
+        (semanaCorrente ? '' : '<button class="btn btn-sm" data-sem="0">Semana atual</button>') +
+        '<button class="btn btn-sm" data-sem="1" aria-label="Próxima semana"'+(semanaCorrente?" disabled":"")+'>▶</button>' +
+      '</div></div>' +
+    '<div class="meta-grid">' +
+      METAS_SEMANA.map(d => cartaoMeta(d, som[d.k], d.meta * ritmoSem, semanaCorrente)).join("") +
+    '</div>' +
+
+    '<div class="metas-head" style="margin-top:30px">' +
+      '<div><h2>Metas mensais</h2>' +
+        '<p class="metas-sub">'+esc(MESES[iniMes.getMonth()])+' de '+iniMes.getFullYear()+' · '+esc(quem)+'</p></div>' +
+      '<div class="metas-nav">' +
+        '<button class="btn btn-sm" data-mes="-1" aria-label="Mês anterior">◀</button>' +
+        (mesCorrente ? '' : '<button class="btn btn-sm" data-mes="0">Mês atual</button>') +
+        '<button class="btn btn-sm" data-mes="1" aria-label="Próximo mês"'+(mesCorrente?" disabled":"")+'>▶</button>' +
+      '</div></div>' +
+    '<div class="meta-grid dois">' +
+      METAS_MES.map(d => cartaoMeta(d, mesa[d.k], d.meta * ritmoMes, mesCorrente)).join("") +
+    '</div>' +
+
+    '<div class="painel" style="margin-top:30px"><h3>Últimas 8 semanas</h3>' +
+      '<p class="desc">Cada coluna é uma semana, da segunda ao domingo. Barra cheia = meta batida.</p>' +
+      '<div style="overflow-x:auto"><table class="meta-hist"><thead><tr><th></th>' +
+        colunas.map(c => '<th'+(c.atual?' class="atual"':"")+'>'+esc(c.rot)+'</th>').join("") +
+      '</tr></thead><tbody>'+histLinhas+'</tbody></table></div></div>' +
+
+    '<p class="metas-nota">As metas contam eventos com data: cadastro da conta, mudança de etapa, ' +
+      'agendamento e conclusão de reunião. Só passa a contar o que acontece dentro do CRM — ' +
+      'movimentos feitos antes da implantação não aparecem aqui. Contas de exemplo são ignoradas.</p>' +
+    '</div>';
+
+  app.querySelectorAll("[data-sem]").forEach(b => b.onclick = () => {
+    const v = Number(b.dataset.sem);
+    UI.semana = v === 0 ? 0 : Math.min(0, UI.semana + v);
+    render();
+  });
+  app.querySelectorAll("[data-mes]").forEach(b => b.onclick = () => {
+    const v = Number(b.dataset.mes);
+    UI.mes = v === 0 ? 0 : Math.min(0, UI.mes + v);
+    render();
+  });
 }
 
 function renderIndicadores(){
@@ -1482,9 +1679,12 @@ function ligarDrawer(c, e){
   const ganho = document.getElementById("dr-ganho");
   if(ganho) ganho.onclick = () => {
     lerForm(c);
+    const etapaAnterior = c.etapa;
     c.status = "ganho"; c.etapa = "fechamento"; c.probabilidade = 100; c.motivoPerda = "";
+    c.fechadaEm = hojeISO();
     Store.salvarConta(c);
     Store.salvarInteracao({id:uid(), contaId:c.id, tipo:"Nota interna", data:hojeISO(),
+      etapaDe:etapaAnterior, etapaPara:"fechamento",
       resumo:"Conta ganha. "+num(c.lojas)+" lojas, "+num(c.entregasMes)+" entregas/mês previstas."});
     toast("🎉 "+c.empresa+" fechada — "+numCurto(c.entregasMes)+" entregas/mês"); renderDrawer();
   };
@@ -1504,7 +1704,7 @@ function ligarDrawer(c, e){
   if(congelar) congelar.onclick = () => { lerForm(c); c.status = "congelado"; Store.salvarConta(c); toast("Conta congelada."); renderDrawer(); };
   const reabrir = document.getElementById("dr-reabrir");
   if(reabrir) reabrir.onclick = () => {
-    c.status = "ativo"; c.motivoPerda = ""; c.probabilidade = ETAPA[c.etapa].prob;
+    c.status = "ativo"; c.motivoPerda = ""; c.probabilidade = ETAPA[c.etapa].prob; c.fechadaEm = "";
     Store.salvarConta(c); UI.aba = "atividades"; toast("Conta reaberta. Agende o próximo passo."); renderDrawer();
   };
   const excluir = document.getElementById("dr-excluir");
