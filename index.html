@@ -410,6 +410,32 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:6px 0 18px}
 .ativ-fechar textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:58px;font-family:var(--f-body);outline:none}
 .novo-bloco{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:10px;padding:12px 13px;margin-bottom:18px}
 
+/* anexos */
+.solta{
+  display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;
+  padding:26px 18px;border:2px dashed var(--line);border-radius:12px;
+  background:var(--surface-2);color:var(--ink-3);cursor:pointer;
+}
+.solta:hover,.solta:focus-visible{border-color:var(--accent-forte);color:var(--ink-2)}
+.solta.sobre{border-color:var(--accent-forte);background:var(--accent-wash);color:var(--ink)}
+.solta.enviando{cursor:progress;border-style:solid;border-color:var(--accent-forte)}
+.solta b{font-family:var(--f-display);font-size:13.5px;font-weight:700;color:var(--ink)}
+.solta span{font-size:11.5px}
+.arq-lista{display:flex;flex-direction:column;gap:7px}
+.arq{
+  display:flex;align-items:center;gap:11px;padding:9px 11px;
+  border:1px solid var(--line-soft);border-radius:10px;background:var(--surface);
+}
+.arq:hover{border-color:var(--line)}
+.arq-ic{
+  flex:none;width:38px;height:38px;border-radius:8px;display:grid;place-items:center;
+  background:var(--accent-wash);color:var(--accent-forte);
+  font-family:var(--f-display);font-size:9.5px;font-weight:700;letter-spacing:.04em;
+}
+.arq-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.arq-txt b{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arq-txt small{font-size:11px;color:var(--ink-3);font-family:var(--f-mono)}
+
 .check{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line-soft);border-radius:9px;margin-bottom:7px;background:var(--surface-2)}
 .check input{margin:3px 0 0;accent-color:var(--accent-forte);flex:none;width:15px;height:15px}
 .check span{font-size:12.5px;line-height:1.45}
@@ -642,6 +668,38 @@ const intDoBanco = r => ({id:r.id, contaId:r.conta_id, tipo:r.tipo, data:r.data,
 const intParaBanco = i => ({id:i.id, conta_id:i.contaId, tipo:i.tipo, data:i.data, resumo:i.resumo,
   etapa_de:i.etapaDe||null, etapa_para:i.etapaPara||null,
   exemplo:!!i.exemplo, criado_por:Auth.uid});
+const anexoDoBanco = r => ({id:r.id, contaId:r.conta_id, nome:r.nome, caminho:r.caminho,
+  tamanho:r.tamanho||0, tipo:r.tipo||"", criadoPor:r.criado_por, criadoEm:r.criado_em||""});
+
+/* ---------- arquivos ---------- */
+const BUCKET = "anexos";
+const TAMANHO_MAX = 25 * 1024 * 1024;
+const EXT_BLOQUEADAS = ["exe","bat","cmd","com","msi","scr","vbs","js","jar","ps1","sh","dll","apk"];
+
+function tamanhoLegivel(b){
+  b = Number(b) || 0;
+  if(b >= 1048576) return (b/1048576).toLocaleString("pt-BR",{maximumFractionDigits:1})+" MB";
+  if(b >= 1024) return Math.round(b/1024)+" KB";
+  return b+" B";
+}
+function extensaoDe(nome){ const p = String(nome).split("."); return p.length > 1 ? p.pop().toLowerCase() : ""; }
+function iconeArquivo(nome){
+  const e = extensaoDe(nome);
+  if(["pdf"].includes(e)) return "PDF";
+  if(["doc","docx","odt"].includes(e)) return "DOC";
+  if(["xls","xlsx","csv","ods"].includes(e)) return "XLS";
+  if(["ppt","pptx"].includes(e)) return "PPT";
+  if(["png","jpg","jpeg","gif","webp","heic","bmp"].includes(e)) return "IMG";
+  if(["zip","rar","7z"].includes(e)) return "ZIP";
+  return e ? e.slice(0,4).toUpperCase() : "ARQ";
+}
+/* O Storage só aceita estes caracteres no caminho; o nome original fica no banco. */
+function caminhoSeguro(contaId, nome){
+  const ext = extensaoDe(nome);
+  const base = nome.replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "arquivo";
+  return "contas/" + contaId + "/" + uid().slice(0, 8) + "-" + base + (ext ? "." + ext : "");
+}
 
 /* ============================================================
    4. Autenticação
@@ -786,7 +844,7 @@ async function entrou(user){
    5. Dados — Supabase com atualização em tempo real
    ============================================================ */
 const Store = {
-  contas:new Map(), atividades:new Map(), interacoes:new Map(), perfis:new Map(),
+  contas:new Map(), atividades:new Map(), interacoes:new Map(), perfis:new Map(), anexos:new Map(),
   canal:null, pronto:false,
 
   async iniciar(){
@@ -799,11 +857,12 @@ const Store = {
     this.pronto = false;
   },
   async carregar(){
-    const [p, c, a, i] = await Promise.all([
+    const [p, c, a, i, x] = await Promise.all([
       sb.from("perfis").select("*"),
       sb.from("contas").select("*"),
       sb.from("atividades").select("*"),
-      sb.from("interacoes").select("*")
+      sb.from("interacoes").select("*"),
+      sb.from("anexos").select("*")
     ]);
     const falha = [p,c,a,i].find(r => r.error);
     if(falha){ toast("Não foi possível carregar os dados: " + falha.error.message); return; }
@@ -811,6 +870,10 @@ const Store = {
     this.contas     = new Map((c.data||[]).map(r => [r.id, contaDoBanco(r)]));
     this.atividades = new Map((a.data||[]).map(r => [r.id, ativDoBanco(r)]));
     this.interacoes = new Map((i.data||[]).map(r => [r.id, intDoBanco(r)]));
+    /* anexos falham silenciosamente se a migração ainda não rodou: a aba
+       avisa por conta própria, em vez de derrubar o carregamento inteiro */
+    this.anexosOk = !x.error;
+    this.anexos = new Map(((x.error ? [] : x.data) || []).map(r => [r.id, anexoDoBanco(r)]));
     this.pronto = true;
     montarFiltroResponsavel();
     render();
@@ -826,6 +889,7 @@ const Store = {
       .on("postgres_changes", {event:"*", schema:"public", table:"contas"},     aplica(this.contas, contaDoBanco))
       .on("postgres_changes", {event:"*", schema:"public", table:"atividades"}, aplica(this.atividades, ativDoBanco))
       .on("postgres_changes", {event:"*", schema:"public", table:"interacoes"}, aplica(this.interacoes, intDoBanco))
+      .on("postgres_changes", {event:"*", schema:"public", table:"anexos"},     aplica(this.anexos, anexoDoBanco))
       .subscribe();
   },
 
@@ -835,12 +899,17 @@ const Store = {
     if(error){ toast("A conta não foi salva: " + error.message); this.carregar(); }
   },
   async excluirConta(id){
+    /* o banco apaga em cascata as linhas filhas, mas os arquivos no
+       Storage não saem sozinhos — têm de ser removidos aqui */
+    const caminhos = [...this.anexos.values()].filter(a => a.contaId === id).map(a => a.caminho);
     this.contas.delete(id);
     [...this.atividades.values()].filter(a => a.contaId === id).forEach(a => this.atividades.delete(a.id));
     [...this.interacoes.values()].filter(i => i.contaId === id).forEach(i => this.interacoes.delete(i.id));
+    [...this.anexos.values()].filter(a => a.contaId === id).forEach(a => this.anexos.delete(a.id));
     render();
     const { error } = await sb.from("contas").delete().eq("id", id);
-    if(error){ toast("A conta não foi excluída: " + error.message); this.carregar(); }
+    if(error){ toast("A conta não foi excluída: " + error.message); this.carregar(); return; }
+    if(caminhos.length) await sb.storage.from(BUCKET).remove(caminhos);
   },
   async salvarAtividade(a){
     this.atividades.set(a.id, a); render();
@@ -861,6 +930,52 @@ const Store = {
     this.interacoes.delete(id); render();
     const { error } = await sb.from("interacoes").delete().eq("id", id);
     if(error){ toast("A interação não foi excluída: " + error.message); this.carregar(); }
+  },
+
+  /* ---------- anexos ---------- */
+  async enviarAnexo(contaId, file){
+    const ext = extensaoDe(file.name);
+    if(EXT_BLOQUEADAS.includes(ext)){
+      toast("Arquivos ." + ext + " não são aceitos por segurança."); return false;
+    }
+    if(file.size > TAMANHO_MAX){
+      toast("“"+file.name+"” tem "+tamanhoLegivel(file.size)+". O limite é 25 MB."); return false;
+    }
+    const caminho = caminhoSeguro(contaId, file.name);
+    const env = await sb.storage.from(BUCKET).upload(caminho, file, {
+      contentType: file.type || "application/octet-stream", upsert: false
+    });
+    if(env.error){
+      toast(env.error.message && /bucket/i.test(env.error.message)
+        ? "O espaço de anexos ainda não foi criado no Supabase. Rode a migração de anexos."
+        : "Falha ao enviar “"+file.name+"”: " + env.error.message);
+      return false;
+    }
+    const linha = {id:uid(), conta_id:contaId, nome:file.name, caminho:caminho,
+                   tamanho:file.size, tipo:file.type || "", criado_por:Auth.uid};
+    const { error } = await sb.from("anexos").insert(linha);
+    if(error){
+      await sb.storage.from(BUCKET).remove([caminho]);   // não deixa arquivo órfão
+      toast("O arquivo não pôde ser registrado: " + error.message);
+      return false;
+    }
+    this.anexos.set(linha.id, anexoDoBanco(linha));
+    return true;
+  },
+  async baixarAnexo(a){
+    const { data, error } = await sb.storage.from(BUCKET)
+      .createSignedUrl(a.caminho, 60, {download: a.nome});
+    if(error || !data){ toast("Não foi possível abrir o arquivo: " + (error ? error.message : "link não gerado")); return; }
+    const link = document.createElement("a");
+    link.href = data.signedUrl; link.rel = "noopener";
+    document.body.appendChild(link); link.click(); link.remove();
+  },
+  async excluirAnexo(a){
+    this.anexos.delete(a.id); render();
+    const r1 = await sb.from("anexos").delete().eq("id", a.id);
+    if(r1.error){ toast("Não foi possível excluir: " + r1.error.message); this.carregar(); return; }
+    await sb.storage.from(BUCKET).remove([a.caminho]);
+    toast("Anexo excluído.");
   },
   async limparExemplos(){
     const ids = [...this.contas.values()].filter(c => c.exemplo).map(c => c.id);
@@ -971,6 +1086,7 @@ function atividadesDe(id){ return [...Store.atividades.values()].filter(a => a.c
 function pendentesDe(id){ return atividadesDe(id).filter(a => a.status !== "concluida"); }
 function proximaAtividade(id){ return pendentesDe(id)[0] || null; }
 function interacoesDe(id){ return [...Store.interacoes.values()].filter(i => i.contaId === id).sort((a,b) => String(b.data).localeCompare(String(a.data))); }
+function anexosDe(id){ return [...Store.anexos.values()].filter(a => a.contaId === id).sort((a,b) => String(b.criadoEm).localeCompare(String(a.criadoEm))); }
 function progressoEtapa(c){
   const et = ETAPA[c.etapa]; if(!et) return 0;
   const marcas = (c.checklist && c.checklist[c.etapa]) || [];
@@ -1130,6 +1246,8 @@ function cardHTML(c, e){
   const dono = Store.perfis.size > 1 && c.responsavel ? '<span class="chip dono">'+esc(primeiroNome(Store.nomeDe(c.responsavel)))+'</span>' : "";
   const temp = c.temperatura ? '<span class="chip" style="color:'+COR_TEMP[c.temperatura]+';border-color:currentColor;font-weight:700">'+esc(c.temperatura)+'</span>' : "";
   const tag = c.tag ? '<span class="chip tag" style="--tg:'+COR_TAG[c.tag]+'">'+esc(c.tag === "Grandes Contas" ? "Grande conta" : "Grupo regional")+'</span>' : "";
+  const nAnexos = anexosDe(c.id).length;
+  const clipe = nAnexos ? '<span class="chip" title="'+nAnexos+' arquivo'+(nAnexos>1?"s":"")+' anexado'+(nAnexos>1?"s":"")+'">📎 '+nAnexos+'</span>' : "";
   const linhaBase = [esc(c.setor || "Setor não informado"),
                      c.lojas ? num(c.lojas)+" lojas" : null,
                      c.praca ? esc(c.praca) : null].filter(Boolean).join(" · ");
@@ -1140,7 +1258,7 @@ function cardHTML(c, e){
       (c.contatoCargo ? ' · '+esc(c.contatoCargo) : "")+'<br>'+linhaBase+'</span>' +
     linhaAtiv +
     '<span class="card-prog"><i style="width:'+progressoEtapa(c)+'%"></i></span>' +
-    '<span class="card-foot">'+chipPrazo+tag+temp+chipStatus+dono+(c.exemplo ? '<span class="chip ex">exemplo</span>' : "")+'</span></button>';
+    '<span class="card-foot">'+chipPrazo+tag+temp+clipe+chipStatus+dono+(c.exemplo ? '<span class="chip ex">exemplo</span>' : "")+'</span></button>';
 }
 
 function ligarQuadro(){
@@ -1704,7 +1822,10 @@ function renderDrawer(){
   const evs = UI.novaConta ? [] : interacoesDe(c.id);
   const diasNaEtapa = c.entradaEtapa ? Math.max(0, -(diasAte(c.entradaEtapa))) : null;
 
-  const rotulos = {dados:"Dados", atividades:"Atividades ("+pend.length+")", historico:"Histórico ("+evs.length+")", etapa:"Critérios"};
+  const anexos = UI.novaConta ? [] : anexosDe(c.id);
+  const rotulos = {dados:"Dados", atividades:"Atividades ("+pend.length+")",
+                   historico:"Histórico ("+evs.length+")",
+                   anexos:"Anexos ("+anexos.length+")", etapa:"Critérios"};
   const cabecalho =
     '<div class="dr-head"><div class="dr-head-top">' +
       '<div style="flex:1"><h2>'+esc(UI.novaConta ? "Nova conta" : c.empresa)+'</h2>' +
@@ -1714,7 +1835,7 @@ function renderDrawer(){
     '</div>' +
     (UI.novaConta ? '<div class="dr-tabs"></div>' :
       '<div class="dr-tabs" role="tablist">' +
-        ["dados","atividades","historico","etapa"].map(t =>
+        ["dados","atividades","historico","anexos","etapa"].map(t =>
           '<button role="tab" data-aba="'+t+'" aria-selected="'+(UI.aba===t)+'">'+esc(rotulos[t])+'</button>').join("") +
       '</div>') +
     '</div>';
@@ -1723,6 +1844,7 @@ function renderDrawer(){
   if(UI.aba === "dados" || UI.novaConta) corpo = formDados(c, e, diasNaEtapa, pend[0]);
   else if(UI.aba === "atividades") corpo = abaAtividades(c, ativs);
   else if(UI.aba === "historico") corpo = abaHistorico(c, evs);
+  else if(UI.aba === "anexos") corpo = abaAnexos(c, anexos);
   else corpo = abaEtapa(c, e);
 
   const rodape = UI.novaConta
@@ -1894,6 +2016,38 @@ function abaHistorico(c, evs){
   return novo + '<div class="eyebrow" style="margin:20px 0 10px">Linha do tempo</div>' + linha;
 }
 
+function abaAnexos(c, anexos){
+  if(Store.anexosOk === false){
+    return '<div class="vazio">Os anexos ainda não estão ligados neste banco.<br>' +
+      'Rode <strong>migracao-anexos.sql</strong> no Supabase para habilitar.</div>';
+  }
+  const total = anexos.reduce((s,a) => s + (Number(a.tamanho)||0), 0);
+  const solta =
+    '<div class="solta" id="zona-anexo" tabindex="0" role="button" aria-label="Enviar arquivo">' +
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">' +
+      '<path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></svg>' +
+      '<b>Arraste os arquivos aqui</b>' +
+      '<span>ou clique para escolher · até 25 MB cada</span>' +
+      '<input type="file" id="arq-input" multiple hidden>' +
+    '</div>';
+
+  const lista = anexos.length ? '<div class="arq-lista">' + anexos.map(a =>
+    '<div class="arq">' +
+      '<span class="arq-ic">'+esc(iconeArquivo(a.nome))+'</span>' +
+      '<span class="arq-txt"><b>'+esc(a.nome)+'</b>' +
+        '<small>'+tamanhoLegivel(a.tamanho)+' · '+fmtData(a.criadoEm)+
+        (a.criadoPor && Store.perfis.size > 1 ? ' · '+esc(primeiroNome(Store.nomeDe(a.criadoPor))) : "")+'</small></span>' +
+      '<button class="btn btn-sm" data-baixar="'+esc(a.id)+'">Baixar</button>' +
+      '<button class="btn btn-ghost btn-sm" data-apagar-anexo="'+esc(a.id)+'" aria-label="Excluir anexo">✕</button>' +
+    '</div>').join("") + '</div>'
+    : '<div class="vazio">Nenhum arquivo anexado. Proposta, minuta, contrato assinado, planilha de volumes — tudo que sustenta a negociação fica aqui.</div>';
+
+  return solta +
+    '<div class="eyebrow" style="margin:20px 0 10px">Arquivos' +
+      (anexos.length ? ' · '+anexos.length+' · '+tamanhoLegivel(total) : "") + '</div>' +
+    lista;
+}
+
 function abaEtapa(c, e){
   const marcas = (c.checklist && c.checklist[c.etapa]) || [];
   const feitos = e.criterios.filter((_,i) => marcas[i]).length;
@@ -2037,6 +2191,45 @@ function ligarDrawer(c, e){
     toast("Interação registrada."); renderDrawer();
   };
   overlay.querySelectorAll(".ev-del").forEach(b => b.onclick = () => { Store.excluirInteracao(b.dataset.ev); renderDrawer(); });
+
+  /* anexos */
+  const zona = document.getElementById("zona-anexo");
+  if(zona){
+    const entrada = document.getElementById("arq-input");
+    let enviando = false;
+
+    const enviar = async lista => {
+      const arquivos = [...lista];
+      if(!arquivos.length || enviando) return;
+      enviando = true;
+      zona.classList.add("enviando");
+      zona.querySelector("b").textContent = "Enviando " + arquivos.length + " arquivo" + (arquivos.length > 1 ? "s" : "") + "…";
+      let ok = 0;
+      for(const f of arquivos){ if(await Store.enviarAnexo(c.id, f)) ok++; }
+      enviando = false;
+      if(ok) toast(ok + (ok > 1 ? " arquivos anexados." : " arquivo anexado."));
+      renderDrawer();
+    };
+
+    zona.onclick = () => { if(!enviando) entrada.click(); };
+    zona.onkeydown = ev => { if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); entrada.click(); } };
+    entrada.onchange = () => { enviar(entrada.files); entrada.value = ""; };
+    zona.ondragover = ev => { ev.preventDefault(); zona.classList.add("sobre"); };
+    zona.ondragleave = () => zona.classList.remove("sobre");
+    zona.ondrop = ev => {
+      ev.preventDefault(); zona.classList.remove("sobre");
+      if(ev.dataTransfer && ev.dataTransfer.files) enviar(ev.dataTransfer.files);
+    };
+  }
+  overlay.querySelectorAll("[data-baixar]").forEach(b => b.onclick = () => {
+    const a = Store.anexos.get(b.dataset.baixar); if(a) Store.baixarAnexo(a);
+  });
+  overlay.querySelectorAll("[data-apagar-anexo]").forEach(b => b.onclick = () => {
+    const a = Store.anexos.get(b.dataset.apagarAnexo); if(!a) return;
+    if(confirm("Excluir “"+a.nome+"”? O arquivo sai para as duas pessoas do time e não dá para desfazer.")){
+      Store.excluirAnexo(a); renderDrawer();
+    }
+  });
 
   overlay.querySelectorAll("[data-crit]").forEach(cb => cb.onchange = () => {
     c.checklist = c.checklist || {};
