@@ -567,8 +567,8 @@ const MOTIVOS_PERDA = ["Preço por entrega","Sem prioridade agora","Concorrente"
 const METAS_SEMANA = [
   {k:"prospeccoes",  meta:10, nome:"Novas prospecções",  desc:"Empresas novas cadastradas no CRM"},
   {k:"conexoes",     meta:5,  nome:"Novas conexões",     desc:"Leads que avançaram para a etapa Conexão"},
-  {k:"agendamentos", meta:2,  nome:"Reuniões agendadas", desc:"Atividades do tipo Reunião marcadas na agenda"},
-  {k:"reunioes",     meta:1,  nome:"Reuniões realizadas",desc:"Atividades do tipo Reunião concluídas"}
+  {k:"agendamentos", meta:2,  nome:"Reuniões agendadas", desc:"Leads que foram de Conexão para Agendamento"},
+  {k:"reunioes",     meta:1,  nome:"Reuniões realizadas",desc:"Leads que foram de Agendamento para Maturação, mais os perdidos no Agendamento com reunião confirmada"}
 ];
 const METAS_MES = [
   {k:"negociacoes",  meta:4,  nome:"Leads em negociação", desc:"Leads que avançaram para a etapa Negociação"},
@@ -639,6 +639,7 @@ function contaDoBanco(r){
     motivoPerda:r.motivo_perda||"", notas:r.notas||"", checklist:r.checklist||{},
     responsavel:r.responsavel||null, entradaEtapa:r.entrada_etapa||hojeISO(),
     tag:r.tag||"", fechadaEm:r.fechada_em||"", perdidaEm:r.perdida_em||"",
+    reuniaoEm:r.reuniao_em||"",
     exemplo:!!r.exemplo, criadoEm:r.criado_em||"", atualizadoEm:r.atualizado_em||""
   };
 }
@@ -655,6 +656,7 @@ function contaParaBanco(c){
     probabilidade:c.probabilidade, motivo_perda:c.motivoPerda, notas:c.notas,
     checklist:c.checklist||{}, responsavel:c.responsavel, entrada_etapa:c.entradaEtapa,
     tag:c.tag||"", fechada_em:c.fechadaEm || null, perdida_em:c.perdidaEm || null,
+    reuniao_em:c.reuniaoEm || null,
     exemplo:!!c.exemplo, criado_por:Auth.uid
   };
 }
@@ -1129,12 +1131,16 @@ function apurar(ini, fim){
   const dentro = s => { const d = parseISO(s); return !!d && d >= ini && d < fim; };
   const transicoes = alvo => [...Store.interacoes.values()]
     .filter(i => ids.has(i.contaId) && i.etapaPara === alvo && dentro(i.data)).length;
-  const ativs = [...Store.atividades.values()].filter(a => ids.has(a.contaId) && a.tipo === "Reunião");
+  /* de → para: a reunião é medida pelo movimento no funil, não pela agenda */
+  const trecho = (de, para) => [...Store.interacoes.values()]
+    .filter(i => ids.has(i.contaId) && i.etapaDe === de && i.etapaPara === para && dentro(i.data)).length;
+  /* reunião que aconteceu mas a conta morreu no Agendamento */
+  const reunioesSemAvanco = base.filter(c => dentro(c.reuniaoEm)).length;
   return {
     prospeccoes:  base.filter(c => dentro(c.criadoEm)).length,
     conexoes:     transicoes("conexao"),
-    agendamentos: ativs.filter(a => dentro(a.criadoEm)).length,
-    reunioes:     ativs.filter(a => a.status === "concluida" && dentro(a.concluidaEm)).length,
+    agendamentos: trecho("conexao", "agendamento"),
+    reunioes:     trecho("agendamento", "maturacao") + reunioesSemAvanco,
     negociacoes:  transicoes("negociacao"),
     fechamentos:  base.filter(c => c.status === "ganho" && dentro(c.fechadaEm)).length
   };
@@ -1285,16 +1291,26 @@ function ligarQuadro(){
   });
 }
 
+/* Registra a mudança de etapa como evento datado. TODO caminho que muda
+   c.etapa precisa passar por aqui: é isto que as Metas e o Relatório
+   contam. Mexer na etapa sem chamar esta função move o card no quadro e
+   deixa o avanço invisível para os indicadores. */
+function registrarEtapa(conta, de, para){
+  if(!de || !para || de === para) return;
+  const nomeDe = ETAPA[de] ? ETAPA[de].nome : de;
+  const nomePara = ETAPA[para] ? ETAPA[para].nome : para;
+  Store.salvarInteracao({id:uid(), contaId:conta.id, tipo:"Nota interna", data:hojeISO(),
+    etapaDe:de, etapaPara:para,
+    resumo:"Etapa alterada: "+nomeDe+" → "+nomePara+" (por "+primeiroNome(Auth.perfil.nome)+")"});
+}
+
 function moverEtapa(id, etapa){
   const c = Store.contas.get(id);
   if(!c || c.etapa === etapa) return;
   const etapaAnterior = c.etapa;
-  const de = ETAPA[etapaAnterior] ? ETAPA[etapaAnterior].nome : etapaAnterior;
   c.etapa = etapa; c.probabilidade = ETAPA[etapa].prob; c.entradaEtapa = hojeISO();
   Store.salvarConta(c);
-  Store.salvarInteracao({id:uid(), contaId:id, tipo:"Nota interna", data:hojeISO(),
-    etapaDe:etapaAnterior, etapaPara:etapa,
-    resumo:"Etapa alterada: "+de+" → "+ETAPA[etapa].nome+" (por "+primeiroNome(Auth.perfil.nome)+")"});
+  registrarEtapa(c, etapaAnterior, etapa);
   toast(c.empresa+" → "+ETAPA[etapa].nome);
 }
 
@@ -1454,9 +1470,11 @@ function renderMetas(){
         colunas.map(c => '<th'+(c.atual?' class="atual"':"")+'>'+esc(c.rot)+'</th>').join("") +
       '</tr></thead><tbody>'+histLinhas+'</tbody></table></div></div>' +
 
-    '<p class="metas-nota">As metas contam eventos com data: cadastro da conta, mudança de etapa, ' +
-      'agendamento e conclusão de reunião. Só passa a contar o que acontece dentro do CRM — ' +
-      'movimentos feitos antes da implantação não aparecem aqui. Contas de exemplo são ignoradas.</p>' +
+    '<p class="metas-nota">As metas contam eventos com data, e as de reunião vêm do movimento no funil: ' +
+      'Conexão → Agendamento conta como reunião agendada, Agendamento → Maturação como reunião realizada. ' +
+      'Conta perdida no Agendamento cujo hunter confirmou que a reunião ocorreu também entra como realizada. ' +
+      'Só passa a contar o que acontece dentro do CRM — movimentos feitos antes da implantação não aparecem aqui. ' +
+      'Contas de exemplo são ignoradas.</p>' +
     '</div>';
 
   app.querySelectorAll("[data-sem]").forEach(b => b.onclick = () => {
@@ -1804,7 +1822,7 @@ function contaEmEdicao(){
       contatoNome:"", contatoCargo:"", contatoEmail:"", contatoTel:"",
       decisorNome:"", decisorCargo:"", praca:"", tag:"", entregasMes:0, lojas:0,
       temperatura:"", sistema:"", raioKm:"", fit:"", previsaoFechamento:"",
-      fechadaEm:"", perdidaEm:"",
+      fechadaEm:"", perdidaEm:"", reuniaoEm:"",
       etapa:"prospeccao", status:"ativo", probabilidade:ETAPAS[0].prob,
       checklist:{}, notas:"", motivoPerda:"", responsavel:Auth.uid,
       entradaEtapa:hojeISO(), exemplo:false, criadoEm:hojeISO(), atualizadoEm:hojeISO()
@@ -1883,6 +1901,7 @@ function formDados(c, e, diasNaEtapa, prox){
       (c.temperatura ? '<span class="status-atual" style="color:'+COR_TEMP[c.temperatura]+'">'+esc(c.temperatura)+'</span>' : "") +
       (c.fit ? '<span class="status-atual">Fit '+esc(c.fit)+'</span>' : "") +
       (c.motivoPerda ? '<span class="status-atual" style="color:var(--danger)">'+esc(c.motivoPerda)+'</span>' : "") +
+      (c.reuniaoEm ? '<span class="status-atual" style="color:var(--ok)">Reunião realizada em '+esc(fmtData(c.reuniaoEm))+'</span>' : "") +
     '</div>' +
     '<div class="derivado">' +
       '<div><span class="dv">'+num(c.entregasMes)+'</span><span class="dl">entregas por mês</span></div>' +
@@ -2106,12 +2125,15 @@ function ligarDrawer(c, e){
 
   const salvar = document.getElementById("dr-salvar");
   if(salvar) salvar.onclick = () => {
+    const etapaAntes = c.etapa;          // antes de lerForm, que já sobrescreve
     lerForm(c);
     if(!c.empresa){ toast("Informe o nome da conta."); const el = document.getElementById("f-empresa"); if(el) el.focus(); return; }
     const nova = UI.novaConta;
     Store.salvarConta(c);
     if(nova){ UI.novaConta = false; rascunho = null; UI.aberta = c.id; UI.aba = "atividades"; }
-    toast(nova ? "Conta criada. Agende a primeira atividade." : "Alterações salvas.");
+    else if(c.etapa !== etapaAntes) registrarEtapa(c, etapaAntes, c.etapa);
+    toast(nova ? "Conta criada. Agende a primeira atividade."
+      : (c.etapa !== etapaAntes ? "Salvo. "+c.empresa+" → "+ETAPA[c.etapa].nome : "Alterações salvas."));
     renderDrawer();
   };
   const cancelar = document.getElementById("dr-cancelar");
@@ -2119,8 +2141,8 @@ function ligarDrawer(c, e){
 
   const ganho = document.getElementById("dr-ganho");
   if(ganho) ganho.onclick = () => {
+    const etapaAnterior = c.etapa;       // antes de lerForm, que já sobrescreve
     lerForm(c);
-    const etapaAnterior = c.etapa;
     c.status = "ganho"; c.etapa = "fechamento"; c.probabilidade = 100; c.motivoPerda = "";
     c.fechadaEm = hojeISO();
     Store.salvarConta(c);
@@ -2135,11 +2157,31 @@ function ligarDrawer(c, e){
     if(m === null) return;
     const n = parseInt(m,10);
     const motivo = (n >= 1 && n <= MOTIVOS_PERDA.length) ? MOTIVOS_PERDA[n-1] : (m.trim() || "Não informado");
+    const etapaNaPerda = c.etapa;
     lerForm(c);
     c.status = "perdido"; c.motivoPerda = motivo; c.probabilidade = 0; c.perdidaEm = hojeISO();
+
+    /* A conta morreu no Agendamento: a reunião pode ter acontecido e o
+       lead simplesmente não avançou. Sem perguntar, o esforço some da meta. */
+    let notaReuniao = "";
+    if(etapaNaPerda === "agendamento" && !c.reuniaoEm){
+      if(confirm("A reunião chegou a acontecer com “"+c.empresa+"”?\n\n" +
+                 "OK = sim, a reunião foi realizada (conta na meta de reuniões realizadas)\n" +
+                 "Cancelar = não, a reunião não aconteceu")){
+        /* usa a data da reunião concluída na agenda, se houver; senão, hoje */
+        const feita = atividadesDe(c.id)
+          .filter(a => a.tipo === "Reunião" && a.status === "concluida")
+          .sort((x,y) => String(y.concluidaEm||y.data).localeCompare(String(x.concluidaEm||x.data)))[0];
+        c.reuniaoEm = feita ? (feita.concluidaEm || feita.data) : hojeISO();
+        notaReuniao = " Reunião realizada em " + fmtData(c.reuniaoEm) + ", sem avanço para Maturação.";
+      }
+    }
+
     Store.salvarConta(c);
-    Store.salvarInteracao({id:uid(), contaId:c.id, tipo:"Nota interna", data:hojeISO(), resumo:"Conta perdida. Motivo: "+motivo+"."});
-    toast("Conta marcada como perdida."); renderDrawer();
+    Store.salvarInteracao({id:uid(), contaId:c.id, tipo:"Nota interna", data:hojeISO(),
+      resumo:"Conta perdida. Motivo: "+motivo+"."+notaReuniao});
+    toast(notaReuniao ? "Perdida, mas a reunião entrou na meta." : "Conta marcada como perdida.");
+    renderDrawer();
   };
   const congelar = document.getElementById("dr-congelar");
   if(congelar) congelar.onclick = () => { lerForm(c); c.status = "congelado"; Store.salvarConta(c); toast("Conta congelada."); renderDrawer(); };
