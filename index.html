@@ -567,8 +567,8 @@ const MOTIVOS_PERDA = ["Preço por entrega","Sem prioridade agora","Concorrente"
 const METAS_SEMANA = [
   {k:"prospeccoes",  meta:10, nome:"Novas prospecções",  desc:"Empresas novas cadastradas no CRM"},
   {k:"conexoes",     meta:5,  nome:"Novas conexões",     desc:"Leads que avançaram para a etapa Conexão"},
-  {k:"agendamentos", meta:2,  nome:"Reuniões agendadas", desc:"Leads que foram de Conexão para Agendamento"},
-  {k:"reunioes",     meta:1,  nome:"Reuniões realizadas",desc:"Leads que foram de Agendamento para Maturação, mais os perdidos no Agendamento com reunião confirmada"}
+  {k:"agendamentos", meta:2,  nome:"Reuniões agendadas", desc:"Leads que entraram na etapa Agendamento"},
+  {k:"reunioes",     meta:1,  nome:"Reuniões realizadas",desc:"Leads que saíram do Agendamento para frente, mais os perdidos ali com reunião confirmada"}
 ];
 const METAS_MES = [
   {k:"negociacoes",  meta:4,  nome:"Leads em negociação", desc:"Leads que avançaram para a etapa Negociação"},
@@ -1131,16 +1131,21 @@ function apurar(ini, fim){
   const dentro = s => { const d = parseISO(s); return !!d && d >= ini && d < fim; };
   const transicoes = alvo => [...Store.interacoes.values()]
     .filter(i => ids.has(i.contaId) && i.etapaPara === alvo && dentro(i.data)).length;
-  /* de → para: a reunião é medida pelo movimento no funil, não pela agenda */
-  const trecho = (de, para) => [...Store.interacoes.values()]
-    .filter(i => ids.has(i.contaId) && i.etapaDe === de && i.etapaPara === para && dentro(i.data)).length;
+  /* A reunião é medida pelo movimento no funil, não pela agenda.
+     Qualquer SAÍDA do Agendamento para uma etapa adiante significa que a
+     reunião aconteceu — inclusive quando o lead pula a Maturação e vai
+     direto para Negociação, ou é fechado na sequência. */
+  const posicao = k => ETAPAS.findIndex(x => x.k === k);
+  const saiuDoAgendamento = [...Store.interacoes.values()].filter(i =>
+    ids.has(i.contaId) && dentro(i.data) &&
+    i.etapaDe === "agendamento" && posicao(i.etapaPara) > posicao("agendamento")).length;
   /* reunião que aconteceu mas a conta morreu no Agendamento */
   const reunioesSemAvanco = base.filter(c => dentro(c.reuniaoEm)).length;
   return {
     prospeccoes:  base.filter(c => dentro(c.criadoEm)).length,
     conexoes:     transicoes("conexao"),
-    agendamentos: trecho("conexao", "agendamento"),
-    reunioes:     trecho("agendamento", "maturacao") + reunioesSemAvanco,
+    agendamentos: transicoes("agendamento"),
+    reunioes:     saiuDoAgendamento + reunioesSemAvanco,
     negociacoes:  transicoes("negociacao"),
     fechamentos:  base.filter(c => c.status === "ganho" && dentro(c.fechadaEm)).length
   };
@@ -1471,7 +1476,8 @@ function renderMetas(){
       '</tr></thead><tbody>'+histLinhas+'</tbody></table></div></div>' +
 
     '<p class="metas-nota">As metas contam eventos com data, e as de reunião vêm do movimento no funil: ' +
-      'Conexão → Agendamento conta como reunião agendada, Agendamento → Maturação como reunião realizada. ' +
+      'entrar no Agendamento conta como reunião agendada; sair do Agendamento para qualquer etapa adiante ' +
+      'conta como realizada, mesmo pulando a Maturação. ' +
       'Conta perdida no Agendamento cujo hunter confirmou que a reunião ocorreu também entra como realizada. ' +
       'Só passa a contar o que acontece dentro do CRM — movimentos feitos antes da implantação não aparecem aqui. ' +
       'Contas de exemplo são ignoradas.</p>' +
