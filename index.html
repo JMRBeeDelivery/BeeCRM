@@ -267,10 +267,16 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .meta-grid.dois{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));max-width:760px}
 .meta-card{
   background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;
-  padding:14px 16px 15px;border-top:3px solid var(--line);
+  padding:14px 16px 13px;border-top:3px solid var(--line);
+  display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
 }
+.meta-card:hover{border-color:var(--ink-3)}
 .meta-card.ok{border-top-color:var(--ok)}
 .meta-card.atras{border-top-color:var(--danger)}
+.meta-card.aberta{box-shadow:0 0 0 2px var(--mel)}
+.meta-card > span:not(.meta-num){display:block}
+.meta-ver{font-size:11px;font-weight:600;color:var(--accent-forte);margin-top:9px}
+.meta-card:hover .meta-ver{text-decoration:underline}
 .meta-num{display:flex;align-items:baseline;gap:6px;margin:6px 0 9px}
 .meta-num b{font-family:var(--f-display);font-size:33px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
 .meta-num span{font-family:var(--f-mono);font-size:14px;color:var(--ink-3)}
@@ -279,6 +285,20 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .meta-trilho u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink-3);opacity:.55;text-decoration:none}
 .meta-sit{font-size:11.5px;font-weight:600;margin-top:8px}
 .meta-desc{font-size:11px;color:var(--ink-3);margin-top:3px;line-height:1.4}
+
+.meta-det{
+  background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--mel);
+  border-radius:12px;padding:15px 17px 17px;margin-top:12px;
+}
+.meta-det-topo{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px}
+.meta-det-topo h4{font-size:14px;font-weight:700}
+.meta-det-topo p{font-size:11.5px;color:var(--ink-3);margin:2px 0 0;max-width:70ch;line-height:1.45}
+.meta-det-topo .btn{margin-left:auto;flex:none}
+.meta-det .lig{
+  border:0;background:transparent;padding:0;font:inherit;font-weight:600;
+  color:var(--ink);cursor:pointer;text-align:left;
+}
+.meta-det .lig:hover{color:var(--accent-forte);text-decoration:underline}
 
 .meta-hist{border-collapse:collapse;width:100%;min-width:520px}
 .meta-hist th{font-family:var(--f-mono);font-size:10.5px;font-weight:500;color:var(--ink-3);padding:0 4px 8px;text-align:center}
@@ -1069,7 +1089,7 @@ async function carregarExemplos(){
    ============================================================ */
 const UI = { view:"funil", busca:"", fStatus:"ativos", fResp:"", fTag:"", aberta:null, aba:"dados",
              arrastando:null, novaConta:false, concluindo:null, semana:0, mes:0,
-             relTipo:"semana", relOffset:0 };
+             relTipo:"semana", relOffset:0, metaAberta:null };
 
 function contasVisiveis(){
   const q = UI.busca.trim().toLowerCase();
@@ -1124,31 +1144,57 @@ function baseApuracao(){
     && (UI.fTag === "__sem__" ? !c.tag : (!UI.fTag || c.tag === UI.fTag)));
 }
 
-/* Conta os eventos de um período [ini, fim). */
-function apurar(ini, fim){
+/* Lista o que cada meta contabilizou no período [ini, fim).
+   Devolve listas, não números: assim a lista que o gerente abre e o
+   contador do cartão saem da mesma fonte e não têm como divergir. */
+function detalhar(ini, fim){
   const base = baseApuracao();
   const ids = new Set(base.map(c => c.id));
   const dentro = s => { const d = parseISO(s); return !!d && d >= ini && d < fim; };
-  const transicoes = alvo => [...Store.interacoes.values()]
-    .filter(i => ids.has(i.contaId) && i.etapaPara === alvo && dentro(i.data)).length;
+  const nomeEtapa = k => ETAPA[k] ? ETAPA[k].nome : (k || "—");
+  const porData = (a,b) => String(a.data).localeCompare(String(b.data));
+  const empresaDe = id => { const c = Store.contas.get(id); return c ? c.empresa : "(conta excluída)"; };
+
+  const movimentos = filtro => [...Store.interacoes.values()]
+    .filter(i => ids.has(i.contaId) && dentro(i.data) && filtro(i))
+    .map(i => ({contaId:i.contaId, empresa:empresaDe(i.contaId), data:i.data,
+                detalhe:"de " + nomeEtapa(i.etapaDe)}))
+    .sort(porData);
+
   /* A reunião é medida pelo movimento no funil, não pela agenda.
      Qualquer SAÍDA do Agendamento para uma etapa adiante significa que a
-     reunião aconteceu — inclusive quando o lead pula a Maturação e vai
-     direto para Negociação, ou é fechado na sequência. */
+     reunião aconteceu — inclusive quando o lead pula a Maturação. */
   const posicao = k => ETAPAS.findIndex(x => x.k === k);
-  const saiuDoAgendamento = [...Store.interacoes.values()].filter(i =>
-    ids.has(i.contaId) && dentro(i.data) &&
-    i.etapaDe === "agendamento" && posicao(i.etapaPara) > posicao("agendamento")).length;
+  const saiuDoAgendamento = [...Store.interacoes.values()]
+    .filter(i => ids.has(i.contaId) && dentro(i.data) &&
+                 i.etapaDe === "agendamento" && posicao(i.etapaPara) > posicao("agendamento"))
+    .map(i => ({contaId:i.contaId, empresa:empresaDe(i.contaId), data:i.data,
+                detalhe:"avançou para " + nomeEtapa(i.etapaPara)}));
   /* reunião que aconteceu mas a conta morreu no Agendamento */
-  const reunioesSemAvanco = base.filter(c => dentro(c.reuniaoEm)).length;
+  const reunioesSemAvanco = base.filter(c => dentro(c.reuniaoEm))
+    .map(c => ({contaId:c.id, empresa:c.empresa, data:c.reuniaoEm,
+                detalhe:"perdida no Agendamento, reunião confirmada"}));
+
   return {
-    prospeccoes:  base.filter(c => dentro(c.criadoEm)).length,
-    conexoes:     transicoes("conexao"),
-    agendamentos: transicoes("agendamento"),
-    reunioes:     saiuDoAgendamento + reunioesSemAvanco,
-    negociacoes:  transicoes("negociacao"),
-    fechamentos:  base.filter(c => c.status === "ganho" && dentro(c.fechadaEm)).length
+    prospeccoes: base.filter(c => dentro(c.criadoEm))
+      .map(c => ({contaId:c.id, empresa:c.empresa, data:String(c.criadoEm).slice(0,10),
+                  detalhe:c.tag || "sem classificação"})).sort(porData),
+    conexoes:     movimentos(i => i.etapaPara === "conexao"),
+    agendamentos: movimentos(i => i.etapaPara === "agendamento"),
+    reunioes:     saiuDoAgendamento.concat(reunioesSemAvanco).sort(porData),
+    negociacoes:  movimentos(i => i.etapaPara === "negociacao"),
+    fechamentos:  base.filter(c => c.status === "ganho" && dentro(c.fechadaEm))
+      .map(c => ({contaId:c.id, empresa:c.empresa, data:c.fechadaEm,
+                  detalhe:num(c.entregasMes) + " entregas/mês"})).sort(porData)
   };
+}
+
+/* Os números das metas — sempre o tamanho das listas acima. */
+function apurar(ini, fim){
+  const d = detalhar(ini, fim);
+  const n = {};
+  for(const k in d) n[k] = d[k].length;
+  return n;
 }
 
 function montarFiltroResponsavel(){
@@ -1388,7 +1434,7 @@ function concluirAtividade(a, resumo){
 }
 
 /* ---------- Metas ---------- */
-function cartaoMeta(def, feito, esperado, corrente){
+function cartaoMeta(def, feito, esperado, corrente, escopo){
   const pct = Math.min(100, Math.round(feito / def.meta * 100));
   const batida = feito >= def.meta;
   const atras = corrente && !batida && feito < esperado;
@@ -1397,14 +1443,42 @@ function cartaoMeta(def, feito, esperado, corrente){
     : corrente ? (atras ? "Faltam " + (def.meta - feito) + " · abaixo do ritmo"
                         : "Faltam " + (def.meta - feito) + " · no ritmo")
     : "Fechou em " + feito + " de " + def.meta;
-  return '<div class="meta-card'+(batida?" ok":atras?" atras":"")+'">' +
-    '<div class="eyebrow">'+esc(def.nome)+'</div>' +
-    '<div class="meta-num"><b>'+feito+'</b><span>/ '+def.meta+'</span></div>' +
-    '<div class="meta-trilho"><i style="width:'+pct+'%;background:'+cor+'"></i>' +
+  const aberta = UI.metaAberta && UI.metaAberta.escopo === escopo && UI.metaAberta.k === def.k;
+  return '<button type="button" class="meta-card'+(batida?" ok":atras?" atras":"")+(aberta?" aberta":"")+'" ' +
+      'data-meta="'+def.k+'" data-escopo="'+escopo+'" aria-expanded="'+(aberta?"true":"false")+'">' +
+    '<span class="eyebrow">'+esc(def.nome)+'</span>' +
+    '<span class="meta-num"><b>'+feito+'</b><span>/ '+def.meta+'</span></span>' +
+    '<span class="meta-trilho"><i style="width:'+pct+'%;background:'+cor+'"></i>' +
       (corrente && !batida ? '<u style="left:'+Math.min(100, esperado/def.meta*100)+'%"></u>' : "") +
+    '</span>' +
+    '<span class="meta-sit" style="color:'+(batida?"var(--ok)":atras?"var(--danger)":"var(--ink-2)")+'">'+esc(situacao)+'</span>' +
+    '<span class="meta-desc">'+esc(def.desc)+'</span>' +
+    '<span class="meta-ver">'+(aberta ? "ocultar as contas ▴" : (feito ? "ver as "+feito+" conta"+(feito>1?"s":"") : "ver as contas")+" ▾")+'</span>' +
+  '</button>';
+}
+
+/* Lista das contas que entraram numa meta, aberta ao clicar no cartão. */
+function painelMeta(escopo, defs, detalhe, rotuloPeriodo){
+  if(!UI.metaAberta || UI.metaAberta.escopo !== escopo) return "";
+  const def = defs.find(d => d.k === UI.metaAberta.k);
+  if(!def) return "";
+  const itens = detalhe[def.k] || [];
+  const linhas = itens.length ? itens.map((it, n) =>
+    '<tr><td class="n" style="color:var(--ink-3)">'+(n+1)+'</td>' +
+    '<td><button class="lig" data-conta="'+esc(it.contaId)+'">'+esc(it.empresa)+'</button></td>' +
+    '<td class="mono">'+fmtData(it.data)+'</td>' +
+    '<td style="color:var(--ink-3)">'+esc(it.detalhe)+'</td></tr>').join("")
+    : '<tr><td colspan="4" class="vaziot">Nenhuma conta entrou nesta meta no período.</td></tr>';
+
+  return '<div class="meta-det">' +
+    '<div class="meta-det-topo">' +
+      '<div><h4>'+esc(def.nome)+'</h4>' +
+      '<p>'+esc(rotuloPeriodo)+' · '+itens.length+' de '+def.meta+' · '+esc(def.desc)+'</p></div>' +
+      '<button class="btn btn-sm" id="fechar-det-'+escopo+'">Fechar</button>' +
     '</div>' +
-    '<div class="meta-sit" style="color:'+(batida?"var(--ok)":atras?"var(--danger)":"var(--ink-2)")+'">'+esc(situacao)+'</div>' +
-    '<div class="meta-desc">'+esc(def.desc)+'</div></div>';
+    '<table class="rel-tab"><thead><tr><th class="n">#</th><th>Empresa</th>' +
+      '<th>Data da contabilização</th><th>Como entrou</th></tr></thead>' +
+      '<tbody>'+linhas+'</tbody></table></div>';
 }
 
 function renderMetas(){
@@ -1416,6 +1490,7 @@ function renderMetas(){
   const semanaCorrente = UI.semana === 0;
   const diaUtil = Math.min(5, Math.max(0, (hoje.getDay() === 0 ? 5 : Math.min(hoje.getDay(), 5))));
   const ritmoSem = semanaCorrente ? diaUtil / 5 : 1;
+  const detSem = detalhar(iniSem, fimSem);
   const som = apurar(iniSem, fimSem);
 
   // --- mês ---
@@ -1424,6 +1499,7 @@ function renderMetas(){
   const mesCorrente = UI.mes === 0;
   const diasNoMes = Math.round((fimMes - iniMes) / 86400000);
   const ritmoMes = mesCorrente ? hoje.getDate() / diasNoMes : 1;
+  const detMes = detalhar(iniMes, fimMes);
   const mesa = apurar(iniMes, fimMes);
 
   const quem = UI.fResp ? Store.nomeDe(UI.fResp) : "toda a equipe";
@@ -1454,8 +1530,9 @@ function renderMetas(){
         '<button class="btn btn-sm" data-sem="1" aria-label="Próxima semana"'+(semanaCorrente?" disabled":"")+'>▶</button>' +
       '</div></div>' +
     '<div class="meta-grid">' +
-      METAS_SEMANA.map(d => cartaoMeta(d, som[d.k], d.meta * ritmoSem, semanaCorrente)).join("") +
+      METAS_SEMANA.map(d => cartaoMeta(d, som[d.k], d.meta * ritmoSem, semanaCorrente, "semana")).join("") +
     '</div>' +
+    painelMeta("semana", METAS_SEMANA, detSem, "Semana de " + faixa) +
 
     '<div class="metas-head" style="margin-top:30px">' +
       '<div><h2>Metas mensais</h2>' +
@@ -1466,8 +1543,9 @@ function renderMetas(){
         '<button class="btn btn-sm" data-mes="1" aria-label="Próximo mês"'+(mesCorrente?" disabled":"")+'>▶</button>' +
       '</div></div>' +
     '<div class="meta-grid dois">' +
-      METAS_MES.map(d => cartaoMeta(d, mesa[d.k], d.meta * ritmoMes, mesCorrente)).join("") +
+      METAS_MES.map(d => cartaoMeta(d, mesa[d.k], d.meta * ritmoMes, mesCorrente, "mes")).join("") +
     '</div>' +
+    painelMeta("mes", METAS_MES, detMes, MESES[iniMes.getMonth()] + " de " + iniMes.getFullYear()) +
 
     '<div class="painel" style="margin-top:30px"><h3>Últimas 8 semanas</h3>' +
       '<p class="desc">Cada coluna é uma semana, da segunda ao domingo. Barra cheia = meta batida.</p>' +
@@ -1493,6 +1571,17 @@ function renderMetas(){
     UI.mes = v === 0 ? 0 : Math.min(0, UI.mes + v);
     render();
   });
+  /* clicar no cartão abre (ou fecha) a lista das contas contabilizadas */
+  app.querySelectorAll("[data-meta]").forEach(b => b.onclick = () => {
+    const k = b.dataset.meta, escopo = b.dataset.escopo;
+    UI.metaAberta = (UI.metaAberta && UI.metaAberta.k === k && UI.metaAberta.escopo === escopo)
+      ? null : {k, escopo};
+    render();
+    const alvo = app.querySelector(".meta-det");
+    if(alvo) alvo.scrollIntoView({block:"nearest", behavior:"smooth"});
+  });
+  app.querySelectorAll("[id^='fechar-det-']").forEach(b => b.onclick = () => { UI.metaAberta = null; render(); });
+  app.querySelectorAll(".meta-det .lig").forEach(b => b.onclick = () => abrir(b.dataset.conta));
 }
 
 /* ---------- Relatório ---------- */
