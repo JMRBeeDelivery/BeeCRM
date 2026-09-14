@@ -41,7 +41,7 @@
   --st-perdido:#B3261E; --st-congelado:#8C8C88;
 
   --at-email:#5C7D8A; --at-tel:#3F7F6E; --at-zap:#1E7A47;
-  --at-reuniao:#C29100; --at-follow:#7E8794;
+  --at-linkedin:#4A5E96; --at-reuniao:#C29100; --at-follow:#7E8794;
 
   --r:10px;
   --f-display:"Roboto","Helvetica Neue",Arial,system-ui,sans-serif;
@@ -63,7 +63,7 @@
     --e5:#D3A23F; --e6:#FFD23F; --e7:#4FB37A;
     --st-perdido:#E4736A; --st-congelado:#9A9A95;
     --at-email:#7FA3B1; --at-tel:#5AA692; --at-zap:#4FB37A;
-    --at-reuniao:#E5B93C; --at-follow:#9BA5B3;
+    --at-linkedin:#8592C9; --at-reuniao:#E5B93C; --at-follow:#9BA5B3;
   }
 }
 :root[data-theme="dark"]{
@@ -80,7 +80,7 @@
   --e5:#D3A23F; --e6:#FFD23F; --e7:#4FB37A;
   --st-perdido:#E4736A; --st-congelado:#9A9A95;
   --at-email:#7FA3B1; --at-tel:#5AA692; --at-zap:#4FB37A;
-  --at-reuniao:#E5B93C; --at-follow:#9BA5B3;
+  --at-linkedin:#8592C9; --at-reuniao:#E5B93C; --at-follow:#9BA5B3;
 }
 
 *{box-sizing:border-box}
@@ -547,12 +547,14 @@ const TIPOS_ATIVIDADE = [
   {k:"E-mail",            cor:"var(--at-email)"},
   {k:"Telefonema",        cor:"var(--at-tel)"},
   {k:"Envio de WhatsApp", cor:"var(--at-zap)"},
+  {k:"LinkedIn",          cor:"var(--at-linkedin)"},
   {k:"Reunião",           cor:"var(--at-reuniao)"},
   {k:"Follow-up",         cor:"var(--at-follow)"}
 ];
 const COR_TIPO = Object.fromEntries(TIPOS_ATIVIDADE.map(t => [t.k, t.cor]));
 const corDe = t => COR_TIPO[t] || "var(--ink-3)";
-const TIPOS_INTERACAO = TIPOS_ATIVIDADE.map(t => t.k).concat(["LinkedIn","Visita","Proposta enviada","No-show","Nota interna"]);
+/* o histórico aceita tudo que se agenda, mais o que só se registra depois */
+const TIPOS_INTERACAO = TIPOS_ATIVIDADE.map(t => t.k).concat(["Visita","Proposta enviada","No-show","Nota interna"]);
 const TIPOS_NEG = new Set(["No-show"]);
 
 const ORIGENS = ["Outbound frio","LinkedIn / social selling","Indicação","Evento / feira","Inbound","Parceiro","Base reativada","Licitação / RFP"];
