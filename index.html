@@ -160,6 +160,11 @@ button{cursor:pointer}
 .quem-txt{display:flex;flex-direction:column;line-height:1.25}
 .quem-nome{font-size:12.5px;font-weight:700;color:#2B2B2B}
 .quem-papel{font-size:10px;color:#6B5C00;letter-spacing:.05em;text-transform:uppercase}
+.selo-ro{
+  display:inline-block;padding:3px 9px;border-radius:6px;background:rgba(0,0,0,.08);
+  border:1px solid rgba(0,0,0,.16);font-size:10.5px;font-weight:700;color:#2B2B2B;
+  letter-spacing:.03em;
+}
 .search{display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:0 11px;min-width:190px}
 .search input{border:0;background:transparent;padding:8px 0;width:100%;outline:none}
 .search svg{flex:none;color:var(--ink-3)}
@@ -525,6 +530,7 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:6px 0 18px}
       <option value="congelado">Congeladas</option>
     </select>
     <button class="btn btn-primary" id="nova">+ Nova conta</button>
+    <span class="selo-ro" id="selo-ro" hidden title="Seu acesso permite consultar e baixar anexos, mas não alterar registros.">Somente leitura</span>
     <div class="quem">
       <span class="quem-av" id="quem-av"></span>
       <span class="quem-txt"><span class="quem-nome" id="quem-nome"></span><span class="quem-papel" id="quem-papel"></span></span>
@@ -732,6 +738,13 @@ const cfg = window.CRM_CONFIG || {};
 let sb = null;
 const Auth = { uid:null, perfil:null, entrando:false, erro:"" };
 
+const PAPEIS = {gerente:"Gerente", hunter:"Hunter", leitura:"Visualização"};
+/* Papel 'leitura' enxerga tudo e não grava nada. O banco já recusa a
+   escrita; a interface esconde os controles para ninguém esbarrar num
+   botão que sempre falha. */
+function soLeitura(){ return !!(Auth.perfil && Auth.perfil.papel === "leitura"); }
+function podeEditar(){ return !!(Auth.perfil && Auth.perfil.papel !== "leitura"); }
+
 const portao = document.getElementById("portao");
 const sistema = document.getElementById("sistema");
 
@@ -860,7 +873,9 @@ async function entrou(user){
   portao.hidden = true; portao.innerHTML = ""; sistema.hidden = false;
   document.getElementById("quem-av").textContent = iniciais(perfil.nome);
   document.getElementById("quem-nome").textContent = primeiroNome(perfil.nome);
-  document.getElementById("quem-papel").textContent = perfil.papel === "gerente" ? "Gerente" : "Hunter";
+  document.getElementById("quem-papel").textContent = PAPEIS[perfil.papel] || perfil.papel;
+  document.getElementById("nova").hidden = soLeitura();
+  document.getElementById("selo-ro").hidden = !soLeitura();
   await Store.iniciar();
 }
 
@@ -1197,13 +1212,44 @@ function apurar(ini, fim){
   return n;
 }
 
+const porNome = (a,b) => String(a.nome).localeCompare(String(b.nome));
+
+/* Quem carrega funil: só os vendedores. Gerente, CEO e BI entram para
+   acompanhar, não para ter carteira — não fazem sentido no filtro. */
+function vendedores(){
+  return [...Store.perfis.values()].filter(p => p.papel === "hunter").sort(porNome);
+}
+
+/* Vendedores, mais quem por algum motivo já é responsável por uma conta
+   sem ser vendedor. Sem essa ressalva, essas contas ficariam fora de
+   qualquer recorte do filtro. */
+function responsaveis(){
+  const lista = vendedores();
+  const ids = new Set(lista.map(p => p.id));
+  Store.contas.forEach(c => {
+    if(c.responsavel && !ids.has(c.responsavel) && Store.perfis.has(c.responsavel)){
+      ids.add(c.responsavel);
+      lista.push(Store.perfis.get(c.responsavel));
+    }
+  });
+  return lista.sort(porNome);
+}
+
+/* Conta nova nasce no nome de quem a criou, se for vendedor; senão, do
+   primeiro vendedor da lista — um gerente cadastrando não vira dono. */
+function responsavelPadrao(){
+  if(Auth.perfil && Auth.perfil.papel === "hunter") return Auth.uid;
+  const v = vendedores();
+  return v.length ? v[0].id : Auth.uid;
+}
+
 function montarFiltroResponsavel(){
   const sel = document.getElementById("f-resp");
-  const atual = UI.fResp;
-  sel.innerHTML = '<option value="">Todos os responsáveis</option>' +
-    [...Store.perfis.values()].sort((a,b) => a.nome.localeCompare(b.nome))
-      .map(p => '<option value="'+esc(p.id)+'"'+(p.id===atual?" selected":"")+">"+esc(p.nome)+"</option>").join("");
-  sel.hidden = Store.perfis.size < 2;
+  const lista = responsaveis();
+  if(UI.fResp && !lista.some(p => p.id === UI.fResp)) UI.fResp = "";
+  sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+    lista.map(p => '<option value="'+esc(p.id)+'"'+(p.id===UI.fResp?" selected":"")+">"+esc(p.nome)+"</option>").join("");
+  sel.hidden = lista.length < 2;
 }
 
 /* ============================================================
@@ -1233,7 +1279,9 @@ function renderBanner(){
   slot.innerHTML =
     '<div class="banner"><strong>'+qtd+' contas de exemplo</strong> estão no quadro para mostrar como o funil funciona — ' +
     'os números não são reais. Apague quando começar a registrar as suas.' +
-    '<button class="btn btn-sm" id="limpar-ex" style="margin-left:auto">Remover exemplos</button></div>';
+    (podeEditar() ? '<button class="btn btn-sm" id="limpar-ex" style="margin-left:auto">Remover exemplos</button>' : "") +
+    '</div>';
+  if(soLeitura()) return;
   document.getElementById("limpar-ex").onclick = () => {
     if(confirm("Remover todas as contas de exemplo, com suas atividades e histórico? Isso não afeta os registros reais.")) Store.limparExemplos();
   };
@@ -1254,9 +1302,12 @@ function renderFunil(){
   if(!Store.contas.size){
     app.innerHTML = '<div class="page"><div class="vazio">' +
       '<strong style="color:var(--ink);display:block;margin-bottom:6px">O funil está vazio</strong>' +
-      'Cadastre a primeira conta em <strong>+ Nova conta</strong>, ou carregue um conjunto de exemplo para ver como o quadro funciona.' +
-      '<br><button class="btn" id="carregar-ex">Carregar 8 contas de exemplo</button></div></div>';
-    document.getElementById("carregar-ex").onclick = carregarExemplos;
+      (soLeitura()
+        ? 'Nenhuma conta foi cadastrada ainda.'
+        : 'Cadastre a primeira conta em <strong>+ Nova conta</strong>, ou carregue um conjunto de exemplo para ver como o quadro funciona.' +
+          '<br><button class="btn" id="carregar-ex">Carregar 8 contas de exemplo</button>') +
+      '</div></div>';
+    if(!soLeitura()) document.getElementById("carregar-ex").onclick = carregarExemplos;
     return;
   }
 
@@ -1302,7 +1353,7 @@ function cardHTML(c, e){
   const chipStatus = c.status === "ganho" ? '<span class="chip won">Ganha</span>'
     : c.status === "perdido" ? '<span class="chip" style="color:var(--st-perdido)">Perdida</span>'
     : c.status === "congelado" ? '<span class="chip">Congelada</span>' : "";
-  const dono = Store.perfis.size > 1 && c.responsavel ? '<span class="chip dono">'+esc(primeiroNome(Store.nomeDe(c.responsavel)))+'</span>' : "";
+  const dono = responsaveis().length > 1 && c.responsavel ? '<span class="chip dono">'+esc(primeiroNome(Store.nomeDe(c.responsavel)))+'</span>' : "";
   const temp = c.temperatura ? '<span class="chip" style="color:'+COR_TEMP[c.temperatura]+';border-color:currentColor;font-weight:700">'+esc(c.temperatura)+'</span>' : "";
   const tag = c.tag ? '<span class="chip tag" style="--tg:'+COR_TAG[c.tag]+'">'+esc(c.tag === "Grandes Contas" ? "Grande conta" : "Grupo regional")+'</span>' : "";
   const nAnexos = anexosDe(c.id).length;
@@ -1323,6 +1374,7 @@ function cardHTML(c, e){
 function ligarQuadro(){
   app.querySelectorAll(".card").forEach(el => {
     el.addEventListener("click", () => abrir(el.dataset.id));
+    if(soLeitura()){ el.setAttribute("draggable","false"); el.style.cursor = "pointer"; return; }
     el.addEventListener("dragstart", ev => {
       UI.arrastando = el.dataset.id; el.classList.add("dragging");
       ev.dataTransfer.effectAllowed = "move";
@@ -1331,6 +1383,7 @@ function ligarQuadro(){
     el.addEventListener("dragend", () => { el.classList.remove("dragging"); UI.arrastando = null;
       app.querySelectorAll(".col.drop").forEach(c => c.classList.remove("drop")); });
   });
+  if(soLeitura()) return;
   app.querySelectorAll(".col").forEach(col => {
     col.addEventListener("dragover", ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; col.classList.add("drop"); });
     col.addEventListener("dragleave", ev => { if(!col.contains(ev.relatedTarget)) col.classList.remove("drop"); });
@@ -1384,13 +1437,13 @@ function renderAgenda(){
       (g.d ? '<p style="margin:-4px 0 9px;font-size:12px;color:var(--ink-3)">'+esc(g.d)+'</p>' : "") +
       '<div class="lista">' + as.map(a => {
         const c = Store.contas.get(a.contaId), e = ETAPA[c.etapa] || ETAPAS[0];
-        const dono = Store.perfis.size > 1 && c.responsavel ? " · " + primeiroNome(Store.nomeDe(c.responsavel)) : "";
+        const dono = responsaveis().length > 1 && c.responsavel ? " · " + primeiroNome(Store.nomeDe(c.responsavel)) : "";
         return '<div class="linha" style="--at:'+corDe(a.tipo)+'">' +
           '<span class="l-data">'+fmtData(a.data)+'<small>'+esc(a.hora || "sem hora")+'</small></span>' +
           '<span class="l-tipo"><i></i>'+esc(a.tipo)+'</span>' +
           '<button class="l-emp" data-id="'+esc(c.id)+'">'+esc(c.empresa)+'<small>'+esc(e.nome)+' · '+num(c.lojas)+' lojas'+esc(dono)+'</small></button>' +
           '<span class="l-desc">'+esc(a.descricao || "—")+'</span>' +
-          '<span class="l-acao"><button class="btn btn-sm" data-concluir="'+esc(a.id)+'">Concluir</button></span></div>';
+          '<span class="l-acao">'+(soLeitura() ? "" : '<button class="btn btn-sm" data-concluir="'+esc(a.id)+'">Concluir</button>')+'</span></div>';
       }).join("") + '</div></section>';
   });
 
@@ -1406,7 +1459,7 @@ function renderAgenda(){
           '<span class="l-tipo"><i></i>Nada marcado</span>' +
           '<button class="l-emp" data-id="'+esc(c.id)+'">'+esc(c.empresa)+'<small>'+esc(e.nome)+' · '+num(c.lojas)+' lojas</small></button>' +
           '<span class="l-desc">'+numCurto(c.entregasMes)+' entregas/mês de potencial</span>' +
-          '<span class="l-acao"><button class="btn btn-sm" data-agendar="'+esc(c.id)+'">Agendar</button></span></div>';
+          '<span class="l-acao">'+(soLeitura() ? "" : '<button class="btn btn-sm" data-agendar="'+esc(c.id)+'">Agendar</button>')+'</span></div>';
       }).join("") + '</div></section>';
   }
 
@@ -1863,12 +1916,12 @@ function renderIndicadores(){
     }).join("") + '</div>';
 
   let painelEquipe = "";
-  if(Store.perfis.size > 1){
-    painelEquipe = '<div class="painel"><h3>Por responsável</h3><p class="desc">Como o funil está dividido no time.</p>' +
-      [...Store.perfis.values()].map(p => {
+  if(responsaveis().length > 1){
+    painelEquipe = '<div class="painel"><h3>Por responsável</h3><p class="desc">Como o funil está dividido entre os vendedores.</p>' +
+      responsaveis().map(p => {
         const suas = base.filter(c => c.responsavel === p.id);
         const abertas = suas.filter(c => c.status === "ativo");
-        return '<div class="kv"><span class="k">'+esc(p.nome)+(p.papel==="gerente"?" · gerente":"")+'</span>' +
+        return '<div class="kv"><span class="k">'+esc(p.nome)+(p.papel!=="hunter"?" · "+esc(PAPEIS[p.papel]||p.papel):"")+'</span>' +
           '<span class="v">'+abertas.length+' em aberto · '+numCurto(soma(abertas,"entregasMes"))+'</span></div>';
       }).join("") + '</div>';
   }
@@ -1919,7 +1972,7 @@ function contaEmEdicao(){
       temperatura:"", sistema:"", raioKm:"", fit:"", previsaoFechamento:"",
       fechadaEm:"", perdidaEm:"", reuniaoEm:"",
       etapa:"prospeccao", status:"ativo", probabilidade:ETAPAS[0].prob,
-      checklist:{}, notas:"", motivoPerda:"", responsavel:Auth.uid,
+      checklist:{}, notas:"", motivoPerda:"", responsavel:responsavelPadrao(),
       entradaEtapa:hojeISO(), exemplo:false, criadoEm:hojeISO(), atualizadoEm:hojeISO()
     };
     return rascunho;
@@ -1962,7 +2015,10 @@ function renderDrawer(){
   else if(UI.aba === "anexos") corpo = abaAnexos(c, anexos);
   else corpo = abaEtapa(c, e);
 
-  const rodape = UI.novaConta
+  const rodape = soLeitura()
+    ? '<span style="font-size:12px;color:var(--ink-3)">Seu acesso é de visualização. ' +
+      'Você consulta e baixa anexos, mas não altera registros.</span>'
+    : UI.novaConta
     ? '<button class="btn btn-primary" id="dr-salvar">Criar conta</button><button class="btn btn-ghost" id="dr-cancelar">Cancelar</button>'
     : '<button class="btn btn-primary" id="dr-salvar">Salvar alterações</button>' +
       (c.status === "ativo"
@@ -1976,11 +2032,19 @@ function renderDrawer(){
     '<aside class="drawer" role="dialog" aria-modal="true" aria-label="Detalhe da conta" style="--st:'+e.cor+'">' +
     cabecalho + '<div class="dr-body">'+corpo+'</div><div class="dr-foot">'+rodape+'</div></aside>';
 
+  /* visualização: campos ficam visíveis, porém intocáveis */
+  if(soLeitura()) overlay.querySelectorAll(".dr-body input, .dr-body select, .dr-body textarea")
+    .forEach(el => { el.disabled = true; });
+
   ligarDrawer(c, e);
 }
 
 function selResponsavel(sel){
-  return [...Store.perfis.values()].sort((a,b) => a.nome.localeCompare(b.nome))
+  const lista = vendedores();
+  /* mantém o dono atual na lista mesmo que ele não seja vendedor, senão
+     abrir e salvar a conta a transferiria para outra pessoa sem aviso */
+  if(sel && !lista.some(p => p.id === sel) && Store.perfis.has(sel)) lista.push(Store.perfis.get(sel));
+  return lista.sort(porNome)
     .map(p => '<option value="'+esc(p.id)+'"'+(p.id===sel?" selected":"")+">"+esc(p.nome)+"</option>").join("");
 }
 
@@ -2064,7 +2128,7 @@ function abaAtividades(c, ativs){
   const pend = ativs.filter(a => a.status !== "concluida");
   const feitas = ativs.filter(a => a.status === "concluida").reverse();
 
-  const novo =
+  const novo = soLeitura() ? "" :
     '<div class="novo-bloco"><div class="eyebrow" style="margin-bottom:9px">Agendar atividade</div>' +
       '<div class="campo"><label for="a-tipo">Tipo</label><select id="a-tipo">'+TIPOS_ATIVIDADE.map(t => '<option value="'+esc(t.k)+'">'+esc(t.k)+'</option>').join("")+'</select></div>' +
       '<div class="grade2">' +
@@ -2084,7 +2148,8 @@ function abaAtividades(c, ativs){
       '<div class="ativ-top"><span class="ativ-tipo">'+esc(a.tipo)+'</span><span class="ativ-quando">'+quando+'</span>' +
       (a.exemplo ? '<span class="chip ex">exemplo</span>' : "") + '</div>' +
       '<div class="ativ-desc">'+esc(a.descricao || "—")+'</div>' +
-      (fechando
+      (soLeitura() ? ""
+        : fechando
         ? '<div class="ativ-fechar"><label class="sr" for="a-res-'+esc(a.id)+'">Como foi</label>' +
           '<textarea id="a-res-'+esc(a.id)+'" placeholder="Como foi? O que ficou combinado?">'+esc(a.descricao || "")+'</textarea>' +
           '<div class="ativ-acoes"><button class="btn btn-primary btn-sm" data-confirmar="'+esc(a.id)+'">Registrar no histórico</button>' +
@@ -2108,7 +2173,7 @@ function abaAtividades(c, ativs){
 }
 
 function abaHistorico(c, evs){
-  const novo =
+  const novo = soLeitura() ? "" :
     '<div class="novo-bloco"><div class="eyebrow" style="margin-bottom:9px">Registrar interação já ocorrida</div>' +
       '<div class="grade2">' +
         '<div class="campo"><label for="i-tipo">Tipo</label><select id="i-tipo">'+opcoes(TIPOS_INTERACAO, "Telefonema")+'</select></div>' +
@@ -2124,7 +2189,7 @@ function abaHistorico(c, evs){
       '<span class="ev-data">'+fmtData(ev.data)+'</span>' +
       (autor && Store.perfis.size > 1 ? '<span class="ev-autor">'+esc(autor)+'</span>' : "") +
       (ev.exemplo ? '<span class="chip ex">exemplo</span>' : "") +
-      '<button class="ev-del" data-ev="'+esc(ev.id)+'" aria-label="Excluir interação">excluir</button></div>' +
+      (soLeitura() ? "" : '<button class="ev-del" data-ev="'+esc(ev.id)+'" aria-label="Excluir interação">excluir</button>') + '</div>' +
       '<div class="ev-txt">'+esc(ev.resumo)+'</div></div></div>';
   }).join("") + '</div>'
     : '<div class="vazio">Nenhuma interação registrada. Concluir uma atividade agendada também escreve aqui.</div>';
@@ -2138,7 +2203,7 @@ function abaAnexos(c, anexos){
       'Rode <strong>migracao-anexos.sql</strong> no Supabase para habilitar.</div>';
   }
   const total = anexos.reduce((s,a) => s + (Number(a.tamanho)||0), 0);
-  const solta =
+  const solta = soLeitura() ? "" :
     '<div class="solta" id="zona-anexo" tabindex="0" role="button" aria-label="Enviar arquivo">' +
       '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">' +
       '<path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></svg>' +
@@ -2154,7 +2219,7 @@ function abaAnexos(c, anexos){
         '<small>'+tamanhoLegivel(a.tamanho)+' · '+fmtData(a.criadoEm)+
         (a.criadoPor && Store.perfis.size > 1 ? ' · '+esc(primeiroNome(Store.nomeDe(a.criadoPor))) : "")+'</small></span>' +
       '<button class="btn btn-sm" data-baixar="'+esc(a.id)+'">Baixar</button>' +
-      '<button class="btn btn-ghost btn-sm" data-apagar-anexo="'+esc(a.id)+'" aria-label="Excluir anexo">✕</button>' +
+      (soLeitura() ? "" : '<button class="btn btn-ghost btn-sm" data-apagar-anexo="'+esc(a.id)+'" aria-label="Excluir anexo">✕</button>') +
     '</div>').join("") + '</div>'
     : '<div class="vazio">Nenhum arquivo anexado. Proposta, minuta, contrato assinado, planilha de volumes — tudo que sustenta a negociação fica aqui.</div>';
 
@@ -2168,12 +2233,14 @@ function abaEtapa(c, e){
   const marcas = (c.checklist && c.checklist[c.etapa]) || [];
   const feitos = e.criterios.filter((_,i) => marcas[i]).length;
   const itens = e.criterios.map((t,i) =>
-    '<label class="check'+(marcas[i]?" ok":"")+'"><input type="checkbox" data-crit="'+i+'"'+(marcas[i]?" checked":"")+'><span>'+esc(t)+'</span></label>').join("");
+    '<label class="check'+(marcas[i]?" ok":"")+'"><input type="checkbox" data-crit="'+i+'"'+
+      (marcas[i]?" checked":"")+(soLeitura()?" disabled":"")+'><span>'+esc(t)+'</span></label>').join("");
   const proxima = ETAPAS[ETAPAS.findIndex(x => x.k === c.etapa)+1];
   return '<div class="eyebrow">Critérios de saída · '+esc(e.nome)+'</div>' +
     '<p style="margin:6px 0 16px;font-size:12.5px;color:var(--ink-3)">Só avance a conta quando os quatro estiverem cumpridos. ' +
       '<strong style="color:var(--ink-2)">'+feitos+' de '+e.criterios.length+'</strong> marcados.</p>' + itens +
-    (proxima && c.status === "ativo"
+    (soLeitura() ? ""
+      : proxima && c.status === "ativo"
       ? '<button class="btn btn-primary" id="dr-avancar" style="margin-top:14px">Avançar para '+esc(proxima.nome)+'</button>'
       : (c.status === "ativo" ? '<p style="margin-top:14px;font-size:12.5px;color:var(--ink-3)">Última etapa do funil. Use <strong>Marcar como ganha</strong> quando o contrato estiver assinado.</p>' : "")) +
     '<hr class="sep" style="margin:22px 0 16px">' +
