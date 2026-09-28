@@ -412,6 +412,8 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .campo input:focus,.campo select:focus,.campo textarea:focus{border-color:var(--accent-forte)}
 .campo textarea{resize:vertical;min-height:66px;font-family:var(--f-body)}
 .campo .hint{font-size:11px;color:var(--ink-3)}
+.link-perfil{font-size:11px;font-weight:600;color:var(--accent-forte);text-decoration:none}
+.link-perfil:hover{text-decoration:underline}
 .grade2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 @media (max-width:520px){.grade2{grid-template-columns:1fr}}
 fieldset.bloco{border:0;padding:0;margin:0 0 6px}
@@ -631,6 +633,27 @@ function uid(){
   });
 }
 function opcoes(lista, sel){ return lista.map(o => '<option value="'+esc(o)+'"'+(o===sel?" selected":"")+">"+esc(o)+"</option>").join(""); }
+
+/* Aceita "linkedin.com/in/fulano" colado do navegador e devolve URL completa. */
+function normalizaUrl(v){
+  v = String(v || "").trim();
+  if(!v) return "";
+  if(!/^https?:\/\//i.test(v)) v = "https://" + v.replace(/^\/+/, "");
+  return v;
+}
+/* Só devolve href para http e https — bloqueia javascript: e afins. */
+function hrefSeguro(v){
+  try {
+    const u = new URL(normalizaUrl(v));
+    return (u.protocol === "http:" || u.protocol === "https:") ? u.href : "";
+  } catch(e){ return ""; }
+}
+function linkPerfil(url, rotulo){
+  const href = hrefSeguro(url);
+  if(!href) return "";
+  return '<a class="link-perfil" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">' +
+    esc(rotulo) + ' ↗</a>';
+}
 function iniciais(nome){
   const p = String(nome||"?").trim().split(/\s+/);
   return ((p[0]||"?")[0] + (p.length>1 ? p[p.length-1][0] : "")).toUpperCase();
@@ -656,6 +679,7 @@ function contaDoBanco(r){
     origem:r.origem||"", contatoNome:r.contato_nome||"", contatoCargo:r.contato_cargo||"",
     contatoEmail:r.contato_email||"", contatoTel:r.contato_tel||"",
     decisorNome:r.decisor_nome||"", decisorCargo:r.decisor_cargo||"",
+    contatoLinkedin:r.contato_linkedin||"", decisorLinkedin:r.decisor_linkedin||"",
     praca:r.praca||"", entregasMes:r.entregas_mes||0,
     lojas:r.lojas||0,
     temperatura:r.temperatura||"", sistema:r.sistema||"",
@@ -674,6 +698,7 @@ function contaParaBanco(c){
     id:c.id, empresa:c.empresa, cnpj:c.cnpj, setor:c.setor, porte:c.porte, origem:c.origem,
     contato_nome:c.contatoNome, contato_cargo:c.contatoCargo, contato_email:c.contatoEmail,
     contato_tel:c.contatoTel, decisor_nome:c.decisorNome, decisor_cargo:c.decisorCargo,
+    contato_linkedin:c.contatoLinkedin||"", decisor_linkedin:c.decisorLinkedin||"",
     praca:c.praca||"", entregas_mes:c.entregasMes||0,
     temperatura:c.temperatura||"", sistema:c.sistema||"",
     raio_km:(c.raioKm===""||c.raioKm===null||c.raioKm===undefined)?null:Number(c.raioKm),
@@ -1170,11 +1195,24 @@ function detalhar(ini, fim){
   const porData = (a,b) => String(a.data).localeCompare(String(b.data));
   const empresaDe = id => { const c = Store.contas.get(id); return c ? c.empresa : "(conta excluída)"; };
 
-  const movimentos = filtro => [...Store.interacoes.values()]
+  /* Uma conta só pode entrar uma vez por dia na mesma meta. Sem esta
+     trava, dois registros da mesma passagem — vindos de caminhos
+     diferentes ou de correção retroativa — contariam em dobro. */
+  const umPorContaPorDia = lista => {
+    const vistos = new Set();
+    return lista.filter(it => {
+      const chave = it.contaId + "|" + String(it.data).slice(0,10);
+      if(vistos.has(chave)) return false;
+      vistos.add(chave);
+      return true;
+    });
+  };
+
+  const movimentos = filtro => umPorContaPorDia([...Store.interacoes.values()]
     .filter(i => ids.has(i.contaId) && dentro(i.data) && filtro(i))
     .map(i => ({contaId:i.contaId, empresa:empresaDe(i.contaId), data:i.data,
                 detalhe:"de " + nomeEtapa(i.etapaDe)}))
-    .sort(porData);
+    .sort(porData));
 
   /* A reunião é medida pelo movimento no funil, não pela agenda.
      Qualquer SAÍDA do Agendamento para uma etapa adiante significa que a
@@ -1196,7 +1234,7 @@ function detalhar(ini, fim){
                   detalhe:c.tag || "sem classificação"})).sort(porData),
     conexoes:     movimentos(i => i.etapaPara === "conexao"),
     agendamentos: movimentos(i => i.etapaPara === "agendamento"),
-    reunioes:     saiuDoAgendamento.concat(reunioesSemAvanco).sort(porData),
+    reunioes:     umPorContaPorDia(saiuDoAgendamento.concat(reunioesSemAvanco).sort(porData)),
     negociacoes:  movimentos(i => i.etapaPara === "negociacao"),
     fechamentos:  base.filter(c => c.status === "ganho" && dentro(c.fechadaEm))
       .map(c => ({contaId:c.id, empresa:c.empresa, data:c.fechadaEm,
@@ -1666,9 +1704,17 @@ function renderRelatorio(){
   const novas    = base.filter(c => dentro(c.criadoEm)).sort((a,b) => String(a.criadoEm).localeCompare(String(b.criadoEm)));
   const ganhas   = base.filter(c => c.status === "ganho"   && dentro(c.fechadaEm));
   const perdidas = base.filter(c => c.status === "perdido" && dentro(c.perdidaEm));
+  /* mesma trava da aba Metas: uma chegada por conta, etapa e dia */
+  const vistosMov = new Set();
   const movs = [...Store.interacoes.values()]
     .filter(i => ids.has(i.contaId) && i.etapaPara && dentro(i.data))
-    .sort((a,b) => String(a.data).localeCompare(String(b.data)));
+    .sort((a,b) => String(a.data).localeCompare(String(b.data)))
+    .filter(i => {
+      const chave = i.contaId + "|" + i.etapaPara + "|" + String(i.data).slice(0,10);
+      if(vistosMov.has(chave)) return false;
+      vistosMov.add(chave);
+      return true;
+    });
   const ativsPeriodo = [...Store.atividades.values()].filter(a => ids.has(a.contaId));
   const registros = [...Store.interacoes.values()]
     .filter(i => ids.has(i.contaId) && !i.etapaPara && dentro(i.data));
@@ -1968,7 +2014,8 @@ function contaEmEdicao(){
     if(!rascunho) rascunho = {
       id:uid(), empresa:"", cnpj:"", setor:"", porte:PORTES[1], origem:ORIGENS[0],
       contatoNome:"", contatoCargo:"", contatoEmail:"", contatoTel:"",
-      decisorNome:"", decisorCargo:"", praca:"", tag:"", entregasMes:0, lojas:0,
+      decisorNome:"", decisorCargo:"", contatoLinkedin:"", decisorLinkedin:"",
+      praca:"", tag:"", entregasMes:0, lojas:0,
       temperatura:"", sistema:"", raioKm:"", fit:"", previsaoFechamento:"",
       fechadaEm:"", perdidaEm:"", reuniaoEm:"",
       etapa:"prospeccao", status:"ativo", probabilidade:ETAPAS[0].prob,
@@ -2108,8 +2155,14 @@ function formDados(c, e, diasNaEtapa, prox){
       '<div class="campo"><label for="f-ccargo">Cargo</label><input id="f-ccargo" value="'+esc(c.contatoCargo)+'"></div>' +
       '<div class="campo"><label for="f-cmail">E-mail</label><input id="f-cmail" type="email" value="'+esc(c.contatoEmail)+'"></div>' +
       '<div class="campo"><label for="f-ctel">Telefone / WhatsApp</label><input id="f-ctel" class="mono" value="'+esc(c.contatoTel)+'"></div>' +
+      '<div class="campo"><label for="f-clink">LinkedIn do contato</label>' +
+        '<input id="f-clink" type="url" inputmode="url" value="'+esc(c.contatoLinkedin)+'" placeholder="linkedin.com/in/…">' +
+        (linkPerfil(c.contatoLinkedin, "Abrir perfil") || '<span class="hint">Cole a URL do perfil; o https:// é preenchido sozinho.</span>') + '</div>' +
       '<div class="campo"><label for="f-dnome">Decisor econômico</label><input id="f-dnome" value="'+esc(c.decisorNome)+'" placeholder="Quem assina"></div>' +
       '<div class="campo"><label for="f-dcargo">Cargo do decisor</label><input id="f-dcargo" value="'+esc(c.decisorCargo)+'"></div>' +
+      '<div class="campo"><label for="f-dlink">LinkedIn do decisor</label>' +
+        '<input id="f-dlink" type="url" inputmode="url" value="'+esc(c.decisorLinkedin)+'" placeholder="linkedin.com/in/…">' +
+        linkPerfil(c.decisorLinkedin, "Abrir perfil") + '</div>' +
     '</div></fieldset><hr class="sep">' +
 
   '<fieldset class="bloco"><legend>Posição no funil</legend>' +
@@ -2274,6 +2327,8 @@ function lerForm(c){
   c.contatoTel = g("f-ctel").trim();
   c.decisorNome = g("f-dnome").trim();
   c.decisorCargo = g("f-dcargo").trim();
+  c.contatoLinkedin = normalizaUrl(g("f-clink"));
+  c.decisorLinkedin = normalizaUrl(g("f-dlink"));
   c.etapa = etapaNova;
   c.probabilidade = Math.max(0, Math.min(100, Number(g("f-prob")) || 0));
   c.notas = g("f-notas");
@@ -2308,8 +2363,13 @@ function ligarDrawer(c, e){
     c.status = "ganho"; c.etapa = "fechamento"; c.probabilidade = 100; c.motivoPerda = "";
     c.fechadaEm = hojeISO();
     Store.salvarConta(c);
+    /* Se a conta JÁ estava em Fechamento, arrastar até lá e depois marcar
+       como ganha gravaria duas chegadas na mesma etapa — e o lead apareceria
+       duplicado nas listagens. Aqui a nota vira registro comum. */
+    const jaEstavaEmFechamento = etapaAnterior === "fechamento";
     Store.salvarInteracao({id:uid(), contaId:c.id, tipo:"Nota interna", data:hojeISO(),
-      etapaDe:etapaAnterior, etapaPara:"fechamento",
+      etapaDe:jaEstavaEmFechamento ? "" : etapaAnterior,
+      etapaPara:jaEstavaEmFechamento ? "" : "fechamento",
       resumo:"Conta ganha. "+num(c.lojas)+" lojas, "+num(c.entregasMes)+" entregas/mês previstas."});
     toast("🎉 "+c.empresa+" fechada — "+numCurto(c.entregasMes)+" entregas/mês"); renderDrawer();
   };
