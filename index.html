@@ -320,6 +320,19 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .meta-hist .hcel.zero::after{height:2px;background:var(--line);opacity:1}
 .meta-hist em{display:block;font-family:var(--f-mono);font-size:10px;font-style:normal;color:var(--ink-3);margin-top:3px}
 .metas-nota{font-size:11.5px;color:var(--ink-3);line-height:1.6;margin-top:22px;max-width:70ch}
+.eq-senha{
+  display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;
+  background:var(--accent-wash);border:1px solid var(--mel);border-radius:11px;
+  padding:14px 16px;margin:14px 0 0;max-width:640px;
+}
+.eq-senha > div:first-child{flex:1;min-width:240px}
+.eq-senha p{font-size:12px;color:var(--ink-2);margin:4px 0 10px;line-height:1.5}
+.eq-senha code{
+  display:inline-block;font-family:var(--f-mono);font-size:16px;font-weight:600;
+  background:var(--surface);border:1px solid var(--line);border-radius:7px;
+  padding:7px 12px;letter-spacing:.04em;user-select:all;
+}
+.eq-senha-bts{display:flex;flex-direction:column;gap:6px}
 .eq-passos{margin:14px 0 0;padding-left:20px;font-size:12.5px;color:var(--ink-2);line-height:1.75;max-width:74ch}
 .eq-passos strong{color:var(--ink)}
 .rel-tab .eq-nome,.rel-tab .eq-papel{
@@ -1013,6 +1026,35 @@ const Store = {
   },
 
   /* ---------- equipe ---------- */
+  /* Cria a conta de login e o perfil de uma vez, pela Edge Function.
+     Devolve {criado:true, senha} em caso de sucesso; {indisponivel:true}
+     quando a função ainda não foi publicada — aí a tela cai no convite. */
+  async criarUsuario(dados){
+    let r;
+    try {
+      r = await sb.functions.invoke("criar-usuario", {body:dados});
+    } catch(e){
+      return {indisponivel:true};
+    }
+    if(r.error){
+      /* função não publicada, ou rede: trata como indisponível */
+      let detalhe = null;
+      try { detalhe = await r.error.context?.json?.(); } catch(e){}
+      if(detalhe && detalhe.erro){
+        if(detalhe.erro === "email_ja_cadastrado"){
+          toast("Já existe conta de login com este e-mail. Use “Vincular agora”.");
+          return {tratado:true};
+        }
+        if(detalhe.erro === "nao_autorizado"){ toast("Apenas gerentes podem criar acessos."); return {tratado:true}; }
+        toast("Não foi possível criar: " + (detalhe.detalhe || detalhe.erro));
+        return {tratado:true};
+      }
+      return {indisponivel:true};
+    }
+    await this.carregar();
+    return {criado:true, senha:r.data && r.data.senha};
+  },
+
   async salvarConvite(dados){
     const { error } = await sb.from("convites").insert(dados);
     if(error){
@@ -1186,7 +1228,7 @@ async function carregarExemplos(){
    ============================================================ */
 const UI = { view:"funil", busca:"", fStatus:"ativos", fResp:"", fTag:"", aberta:null, aba:"dados",
              arrastando:null, novaConta:false, concluindo:null, semana:0, mes:0,
-             relTipo:"semana", relOffset:0, metaAberta:null };
+             relTipo:"semana", relOffset:0, metaAberta:null, senhaNova:null };
 
 function contasVisiveis(){
   const q = UI.busca.trim().toLowerCase();
@@ -1757,6 +1799,17 @@ function renderEquipe(){
     '</tr>';
   }).join("");
 
+  /* Senha provisória recém-criada: fica na tela até ser dispensada,
+     porque é a única vez que ela aparece. */
+  const s = UI.senhaNova;
+  const senhaHTML = !s ? "" :
+    '<div class="eq-senha"><div><div class="eyebrow">Acesso criado — '+esc(s.nome)+'</div>' +
+      '<p>Envie estes dados para <strong>'+esc(s.email)+'</strong> e peça que troque a senha no primeiro acesso. ' +
+      'Esta senha não volta a ser exibida.</p>' +
+      '<code id="eq-senha-txt">'+esc(s.senha)+'</code></div>' +
+      '<div class="eq-senha-bts"><button class="btn btn-sm" id="eq-copiar">Copiar</button>' +
+      '<button class="btn btn-ghost btn-sm" id="eq-ok">Já anotei</button></div></div>';
+
   const pendentes = [...Store.convites.values()].filter(c => !c.usado_em)
     .sort((a,b) => String(b.criado_em).localeCompare(String(a.criado_em)));
   const linhasPend = pendentes.length ? pendentes.map(c =>
@@ -1790,11 +1843,11 @@ function renderEquipe(){
         '<div class="campo" style="max-width:260px"><label for="cv-papel">Papel</label><select id="cv-papel">' +
           '<option value="hunter">Vendedor</option><option value="gerente">Gerente</option>' +
           '<option value="leitura">Visualização</option></select></div>' +
-        '<button class="btn btn-primary btn-sm" id="cv-add">Registrar convite</button>' +
+        '<button class="btn btn-primary btn-sm" id="cv-add">Criar acesso</button>' +
       '</div>' +
-      '<ol class="eq-passos"><li>Registre o convite acima.</li>' +
-      '<li>No Supabase, vá em <strong>Authentication → Users → Add user</strong>, use o mesmo e-mail, defina uma senha e marque <strong>Auto Confirm User</strong>.</li>' +
-      '<li>Pronto: o perfil é criado sozinho com o nome e o papel do convite. Se a pessoa já existia antes do convite, use <strong>Vincular agora</strong>.</li></ol>') +
+      senhaHTML +
+      '<ol class="eq-passos"><li>Preencha e clique em <strong>Criar acesso</strong>. A conta é criada na hora e aparece na lista acima, com uma senha provisória para você repassar.</li>' +
+      '<li>Se a criação automática ainda não estiver publicada, o CRM guarda o pedido como convite e avisa. Aí basta ir ao Supabase em <strong>Authentication → Users → Add user</strong> com o mesmo e-mail, marcando <strong>Auto Confirm User</strong> — o perfil nasce sozinho.</li></ol>') +
 
     secao("Convites aguardando", "",
       '<table class="rel-tab"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Convidado em</th><th></th></tr></thead>' +
@@ -1818,17 +1871,40 @@ function renderEquipe(){
   app.querySelectorAll("[data-vincular]").forEach(b => b.onclick = () => Store.vincularConvite(b.dataset.vincular));
   app.querySelectorAll("[data-del-convite]").forEach(b => b.onclick = () => Store.excluirConvite(b.dataset.delConvite));
 
+  const copiar = document.getElementById("eq-copiar");
+  if(copiar) copiar.onclick = () => {
+    navigator.clipboard.writeText(UI.senhaNova.email + " · " + UI.senhaNova.senha)
+      .then(() => toast("E-mail e senha copiados."))
+      .catch(() => toast("Não foi possível copiar. Anote da tela."));
+  };
+  const okSenha = document.getElementById("eq-ok");
+  if(okSenha) okSenha.onclick = () => { UI.senhaNova = null; render(); };
+
   const add = document.getElementById("cv-add");
   if(add) add.onclick = async () => {
     const nome = document.getElementById("cv-nome").value.trim();
     const email = document.getElementById("cv-email").value.trim().toLowerCase();
+    const papel = document.getElementById("cv-papel").value;
     if(!nome){ toast("Informe o nome."); return; }
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast("Informe um e-mail válido."); return; }
     if([...Store.perfis.values()].some(p => (p.email||"").toLowerCase() === email)){
       toast("Esta pessoa já tem acesso."); return;
     }
-    const ok = await Store.salvarConvite({nome, email, papel:document.getElementById("cv-papel").value, criado_por:Auth.uid});
-    if(ok) toast("Convite registrado. Agora crie a conta em Authentication → Users.");
+
+    add.disabled = true; add.textContent = "Criando…";
+    const r = await Store.criarUsuario({nome, email, papel});
+    add.disabled = false; add.textContent = "Criar acesso";
+
+    if(r.criado){
+      UI.senhaNova = {nome, email, senha:r.senha};
+      render();
+      return;
+    }
+    if(r.tratado) return;
+
+    /* função de criação não publicada: guarda como convite */
+    const ok = await Store.salvarConvite({nome, email, papel, criado_por:Auth.uid});
+    if(ok) toast("Pedido guardado como convite. Crie a conta em Authentication → Users com este e-mail.");
   };
 }
 
