@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hunter de Grandes Contas</title>
+<title>CRM Grandes Contas</title>
 <meta name="description" content="CRM de funil para hunting de grandes contas: prospecção ao fechamento, atividades agendadas e indicadores.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -522,7 +522,7 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:6px 0 18px}
         <path d="M11 1.2 20.1 6.6v10.8L11 22.8 1.9 17.4V6.6z" fill="none" stroke="#2B2B2B" stroke-width="1.8" stroke-linejoin="round"/>
         <path d="M11 7.4 16 10.3v5.8L11 19l-5-2.9v-5.8z" fill="#2B2B2B"/>
       </svg>
-      <h1>Hunter · Grandes Contas</h1>
+      <h1>CRM Grandes Contas</h1>
     </div>
     <div class="views" role="tablist" aria-label="Visões">
       <button role="tab" data-view="funil" aria-selected="true">Funil</button>
@@ -610,7 +610,7 @@ const ORIGENS = ["Outbound frio","LinkedIn / social selling","Indicação","Even
 const PORTES = ["Rede nacional (300+ lojas)","Rede regional (100–299)","Rede local (20–99)","Até 20 lojas","Grupo econômico"];
 const MOTIVOS_PERDA = ["Preço por entrega","Sem prioridade agora","Concorrente","Sem fit com o ICP","Decisor não engajou","Processo interno travado","Sem resposta","Nuvem de entregadores"];
 /* ------------------------------------------------------------------
-   METAS DO HUNTER — para mudar um número, altere aqui e republique.
+   METAS DO VENDEDOR — para mudar um número, altere aqui e republique.
    Cada meta conta um evento datado, não um estado do funil.
    ------------------------------------------------------------------ */
 const METAS_SEMANA = [
@@ -801,7 +801,7 @@ const MARCA_SVG = '<svg width="26" height="28" viewBox="0 0 22 24" aria-hidden="
 function telaPortao(conteudo){
   portao.hidden = false; sistema.hidden = true;
   portao.innerHTML = '<div class="portao"><div class="portao-card">' +
-    '<div class="portao-marca">'+MARCA_SVG+'<h1>Hunter · Grandes Contas</h1></div>' +
+    '<div class="portao-marca">'+MARCA_SVG+'<h1>CRM Grandes Contas</h1></div>' +
     conteudo + '</div></div>';
 }
 
@@ -1747,7 +1747,7 @@ function renderMetas(){
     '<p class="metas-nota">As metas contam eventos com data, e as de reunião vêm do movimento no funil: ' +
       'entrar no Agendamento conta como reunião agendada; sair do Agendamento para qualquer etapa adiante ' +
       'conta como realizada, mesmo pulando a Maturação. ' +
-      'Conta perdida no Agendamento cujo hunter confirmou que a reunião ocorreu também entra como realizada. ' +
+      'Conta perdida no Agendamento cujo vendedor confirmou que a reunião ocorreu também entra como realizada. ' +
       'Só passa a contar o que acontece dentro do CRM — movimentos feitos antes da implantação não aparecem aqui. ' +
       'Contas de exemplo são ignoradas.</p>' +
     '</div>';
@@ -2178,7 +2178,7 @@ function renderIndicadores(){
   }).join("");
 
   const painelTemp = '<div class="painel"><h3>Temperatura e fit</h3>' +
-    '<p class="desc">Leitura do hunter sobre engajamento e aderência à operação Bee, nas contas em aberto.</p>' +
+    '<p class="desc">Leitura do vendedor sobre engajamento e aderência à operação Bee, nas contas em aberto.</p>' +
     TEMPERATURAS.map(t => {
       const cs = ativas.filter(c => c.temperatura === t);
       return '<div class="kv" style="--at:'+COR_TEMP[t]+'"><span class="k"><i></i>'+esc(t)+'</span>' +
