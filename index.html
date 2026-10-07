@@ -320,6 +320,13 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .meta-hist .hcel.zero::after{height:2px;background:var(--line);opacity:1}
 .meta-hist em{display:block;font-family:var(--f-mono);font-size:10px;font-style:normal;color:var(--ink-3);margin-top:3px}
 .metas-nota{font-size:11.5px;color:var(--ink-3);line-height:1.6;margin-top:22px;max-width:70ch}
+.eq-passos{margin:14px 0 0;padding-left:20px;font-size:12.5px;color:var(--ink-2);line-height:1.75;max-width:74ch}
+.eq-passos strong{color:var(--ink)}
+.rel-tab .eq-nome,.rel-tab .eq-papel{
+  background:var(--surface);border:1px solid var(--line);border-radius:7px;
+  padding:5px 8px;font-size:12.5px;max-width:230px;width:100%;
+}
+.rel-tab .eq-nome:focus,.rel-tab .eq-papel:focus{border-color:var(--accent-forte);outline:none}
 
 /* ---------- relatório ---------- */
 .relatorio{max-width:1000px}
@@ -510,6 +517,7 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:6px 0 18px}
       <button role="tab" data-view="metas" aria-selected="false">Metas</button>
       <button role="tab" data-view="relatorio" aria-selected="false">Relatório</button>
       <button role="tab" data-view="indicadores" aria-selected="false">Indicadores</button>
+      <button role="tab" data-view="equipe" aria-selected="false" id="aba-equipe" hidden>Equipe</button>
     </div>
     <div class="spacer"></div>
     <label class="search">
@@ -763,7 +771,7 @@ const cfg = window.CRM_CONFIG || {};
 let sb = null;
 const Auth = { uid:null, perfil:null, entrando:false, erro:"" };
 
-const PAPEIS = {gerente:"Gerente", hunter:"Hunter", leitura:"Visualização"};
+const PAPEIS = {gerente:"Gerente", hunter:"Vendedor", leitura:"Visualização"};
 /* Papel 'leitura' enxerga tudo e não grava nada. O banco já recusa a
    escrita; a interface esconde os controles para ninguém esbarrar num
    botão que sempre falha. */
@@ -901,6 +909,7 @@ async function entrou(user){
   document.getElementById("quem-papel").textContent = PAPEIS[perfil.papel] || perfil.papel;
   document.getElementById("nova").hidden = soLeitura();
   document.getElementById("selo-ro").hidden = !soLeitura();
+  document.getElementById("aba-equipe").hidden = perfil.papel !== "gerente";
   await Store.iniciar();
 }
 
@@ -908,7 +917,8 @@ async function entrou(user){
    5. Dados — Supabase com atualização em tempo real
    ============================================================ */
 const Store = {
-  contas:new Map(), atividades:new Map(), interacoes:new Map(), perfis:new Map(), anexos:new Map(),
+  contas:new Map(), atividades:new Map(), interacoes:new Map(), perfis:new Map(),
+  anexos:new Map(), convites:new Map(),
   canal:null, pronto:false,
 
   async iniciar(){
@@ -921,12 +931,13 @@ const Store = {
     this.pronto = false;
   },
   async carregar(){
-    const [p, c, a, i, x] = await Promise.all([
+    const [p, c, a, i, x, cv] = await Promise.all([
       sb.from("perfis").select("*"),
       sb.from("contas").select("*"),
       sb.from("atividades").select("*"),
       sb.from("interacoes").select("*"),
-      sb.from("anexos").select("*")
+      sb.from("anexos").select("*"),
+      sb.from("convites").select("*")
     ]);
     const falha = [p,c,a,i].find(r => r.error);
     if(falha){ toast("Não foi possível carregar os dados: " + falha.error.message); return; }
@@ -938,6 +949,9 @@ const Store = {
        avisa por conta própria, em vez de derrubar o carregamento inteiro */
     this.anexosOk = !x.error;
     this.anexos = new Map(((x.error ? [] : x.data) || []).map(r => [r.id, anexoDoBanco(r)]));
+    /* convites só são legíveis por gerentes; para os demais vem vazio */
+    this.convitesOk = !cv.error;
+    this.convites = new Map(((cv.error ? [] : cv.data) || []).map(r => [r.id, r]));
     this.pronto = true;
     montarFiltroResponsavel();
     render();
@@ -954,6 +968,8 @@ const Store = {
       .on("postgres_changes", {event:"*", schema:"public", table:"atividades"}, aplica(this.atividades, ativDoBanco))
       .on("postgres_changes", {event:"*", schema:"public", table:"interacoes"}, aplica(this.interacoes, intDoBanco))
       .on("postgres_changes", {event:"*", schema:"public", table:"anexos"},     aplica(this.anexos, anexoDoBanco))
+      .on("postgres_changes", {event:"*", schema:"public", table:"perfis"},     aplica(this.perfis, r => r))
+      .on("postgres_changes", {event:"*", schema:"public", table:"convites"},   aplica(this.convites, r => r))
       .subscribe();
   },
 
@@ -994,6 +1010,47 @@ const Store = {
     this.interacoes.delete(id); render();
     const { error } = await sb.from("interacoes").delete().eq("id", id);
     if(error){ toast("A interação não foi excluída: " + error.message); this.carregar(); }
+  },
+
+  /* ---------- equipe ---------- */
+  async salvarConvite(dados){
+    const { error } = await sb.from("convites").insert(dados);
+    if(error){
+      toast(/duplicate|unique/i.test(error.message)
+        ? "Já existe um convite para este e-mail."
+        : "Não foi possível registrar o convite: " + error.message);
+      return false;
+    }
+    await this.carregar();
+    return true;
+  },
+  async excluirConvite(id){
+    const { error } = await sb.from("convites").delete().eq("id", id);
+    if(error){ toast("Não foi possível excluir o convite: " + error.message); return; }
+    await this.carregar();
+  },
+  async vincularConvite(email){
+    const { data, error } = await sb.rpc("vincular_convite", {p_email: email});
+    if(error){ toast("Falha ao liberar o acesso: " + error.message); return; }
+    if(data === "usuario_nao_criado"){
+      toast("Ainda não existe conta de login com este e-mail. Crie em Authentication → Users primeiro.");
+      return;
+    }
+    if(data === "convite_nao_encontrado"){ toast("Convite não encontrado."); return; }
+    await this.carregar();
+    toast("Acesso liberado.");
+  },
+  async atualizarPerfil(id, campos){
+    const { error } = await sb.from("perfis").update(campos).eq("id", id);
+    if(error){ toast(error.message); await this.carregar(); return false; }
+    await this.carregar();
+    return true;
+  },
+  async revogarPerfil(id){
+    const { error } = await sb.from("perfis").delete().eq("id", id);
+    if(error){ toast(error.message); return; }
+    await this.carregar();
+    toast("Acesso revogado.");
   },
 
   /* ---------- anexos ---------- */
@@ -1306,6 +1363,7 @@ function render(){
   else if(UI.view === "agenda") renderAgenda();
   else if(UI.view === "metas") renderMetas();
   else if(UI.view === "relatorio") renderRelatorio();
+  else if(UI.view === "equipe") renderEquipe();
   else renderIndicadores();
   renderDrawer();
 }
@@ -1673,6 +1731,105 @@ function renderMetas(){
   });
   app.querySelectorAll("[id^='fechar-det-']").forEach(b => b.onclick = () => { UI.metaAberta = null; render(); });
   app.querySelectorAll(".meta-det .lig").forEach(b => b.onclick = () => abrir(b.dataset.conta));
+}
+
+/* ---------- Equipe (só gerentes) ---------- */
+function renderEquipe(){
+  if(!Auth.perfil || Auth.perfil.papel !== "gerente"){
+    app.innerHTML = '<div class="page"><div class="vazio">Esta área é restrita a gerentes.</div></div>';
+    return;
+  }
+
+  const pessoas = [...Store.perfis.values()].sort((a,b) =>
+    (({gerente:1, hunter:2, leitura:3})[a.papel] - ({gerente:1, hunter:2, leitura:3})[b.papel]) || porNome(a,b));
+
+  const linhas = pessoas.map(p => {
+    const eu = p.id === Auth.uid;
+    return '<tr>' +
+      '<td><input class="eq-nome" data-id="'+esc(p.id)+'" value="'+esc(p.nome)+'" aria-label="Nome"></td>' +
+      '<td class="mono" style="color:var(--ink-2)">'+esc(p.email || "—")+'</td>' +
+      '<td><select class="eq-papel" data-id="'+esc(p.id)+'" aria-label="Papel">' +
+        Object.keys(PAPEIS).map(k => '<option value="'+k+'"'+(k===p.papel?" selected":"")+'>'+esc(PAPEIS[k])+'</option>').join("") +
+      '</select></td>' +
+      '<td class="mono">'+fmtData(p.criado_em)+'</td>' +
+      '<td>'+(eu ? '<span class="chip">você</span>'
+                 : '<button class="btn btn-danger btn-sm" data-revogar="'+esc(p.id)+'">Revogar</button>')+'</td>' +
+    '</tr>';
+  }).join("");
+
+  const pendentes = [...Store.convites.values()].filter(c => !c.usado_em)
+    .sort((a,b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+  const linhasPend = pendentes.length ? pendentes.map(c =>
+    '<tr><td>'+esc(c.nome)+'</td>' +
+    '<td class="mono" style="color:var(--ink-2)">'+esc(c.email)+'</td>' +
+    '<td>'+esc(PAPEIS[c.papel] || c.papel)+'</td>' +
+    '<td class="mono">'+fmtData(c.criado_em)+'</td>' +
+    '<td><button class="btn btn-sm" data-vincular="'+esc(c.email)+'">Vincular agora</button> ' +
+      '<button class="btn btn-ghost btn-sm" data-del-convite="'+esc(c.id)+'" aria-label="Excluir convite">✕</button></td></tr>').join("")
+    : '<tr><td colspan="5" class="vaziot">Nenhum convite aguardando.</td></tr>';
+
+  app.innerHTML = '<div class="page relatorio">' +
+    '<div class="rel-topo"><div><h2>Equipe</h2>' +
+      '<p class="metas-sub">Quem tem acesso ao CRM e com que poderes.</p></div></div>' +
+
+    secao("Pessoas com acesso",
+      "Gerente vê tudo, edita tudo e administra esta aba. Vendedor vê tudo e edita tudo, e é quem aparece no filtro de responsável. Visualização só consulta.",
+      '<table class="rel-tab"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Desde</th><th></th></tr></thead>' +
+      '<tbody>'+linhas+'</tbody></table>' +
+      '<p class="rel-nota" style="margin-top:10px">Alterações de nome e papel são salvas ao sair do campo. ' +
+      'Revogar remove o acesso, mas preserva o histórico do que a pessoa registrou.</p>') +
+
+    secao("Convidar nova pessoa",
+      "Registre aqui e depois crie a conta de login no Supabase — o acesso é liberado sozinho. " +
+      "A senha é definida lá, nunca passa por este site.",
+      '<div class="novo-bloco" style="max-width:640px">' +
+        '<div class="grade2">' +
+          '<div class="campo"><label for="cv-nome">Nome</label><input id="cv-nome" placeholder="Nome e sobrenome"></div>' +
+          '<div class="campo"><label for="cv-email">E-mail corporativo</label><input id="cv-email" type="email" placeholder="nome@beedelivery.com.br"></div>' +
+        '</div>' +
+        '<div class="campo" style="max-width:260px"><label for="cv-papel">Papel</label><select id="cv-papel">' +
+          '<option value="hunter">Vendedor</option><option value="gerente">Gerente</option>' +
+          '<option value="leitura">Visualização</option></select></div>' +
+        '<button class="btn btn-primary btn-sm" id="cv-add">Registrar convite</button>' +
+      '</div>' +
+      '<ol class="eq-passos"><li>Registre o convite acima.</li>' +
+      '<li>No Supabase, vá em <strong>Authentication → Users → Add user</strong>, use o mesmo e-mail, defina uma senha e marque <strong>Auto Confirm User</strong>.</li>' +
+      '<li>Pronto: o perfil é criado sozinho com o nome e o papel do convite. Se a pessoa já existia antes do convite, use <strong>Vincular agora</strong>.</li></ol>') +
+
+    secao("Convites aguardando", "",
+      '<table class="rel-tab"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Convidado em</th><th></th></tr></thead>' +
+      '<tbody>'+linhasPend+'</tbody></table>') +
+    '</div>';
+
+  /* salvar ao sair do campo, não a cada tecla */
+  app.querySelectorAll(".eq-nome").forEach(el => el.onchange = () => {
+    const v = el.value.trim();
+    if(!v){ toast("O nome não pode ficar vazio."); Store.carregar(); return; }
+    Store.atualizarPerfil(el.dataset.id, {nome:v}).then(ok => { if(ok) toast("Nome atualizado."); });
+  });
+  app.querySelectorAll(".eq-papel").forEach(el => el.onchange = () => {
+    Store.atualizarPerfil(el.dataset.id, {papel:el.value}).then(ok => { if(ok) toast("Papel atualizado."); });
+  });
+  app.querySelectorAll("[data-revogar]").forEach(b => b.onclick = () => {
+    const p = Store.perfis.get(b.dataset.revogar);
+    if(p && confirm("Revogar o acesso de “"+p.nome+"”?\n\nA conta de login continua existindo no Supabase, mas a pessoa deixa de ver o CRM. O histórico do que ela registrou é preservado."))
+      Store.revogarPerfil(p.id);
+  });
+  app.querySelectorAll("[data-vincular]").forEach(b => b.onclick = () => Store.vincularConvite(b.dataset.vincular));
+  app.querySelectorAll("[data-del-convite]").forEach(b => b.onclick = () => Store.excluirConvite(b.dataset.delConvite));
+
+  const add = document.getElementById("cv-add");
+  if(add) add.onclick = async () => {
+    const nome = document.getElementById("cv-nome").value.trim();
+    const email = document.getElementById("cv-email").value.trim().toLowerCase();
+    if(!nome){ toast("Informe o nome."); return; }
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast("Informe um e-mail válido."); return; }
+    if([...Store.perfis.values()].some(p => (p.email||"").toLowerCase() === email)){
+      toast("Esta pessoa já tem acesso."); return;
+    }
+    const ok = await Store.salvarConvite({nome, email, papel:document.getElementById("cv-papel").value, criado_por:Auth.uid});
+    if(ok) toast("Convite registrado. Agora crie a conta em Authentication → Users.");
+  };
 }
 
 /* ---------- Relatório ---------- */
