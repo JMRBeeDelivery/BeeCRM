@@ -346,8 +346,27 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
   border-radius:7px;padding:6px 9px;font-family:var(--f-mono);font-size:13px;
 }
 .eq-troca input:focus{border-color:var(--accent-forte);outline:none}
-.eq-passos{margin:14px 0 0;padding-left:20px;font-size:12.5px;color:var(--ink-2);line-height:1.75;max-width:74ch}
-.eq-passos strong{color:var(--ink)}
+.eq-nota{margin:14px 0 0;font-size:12px;color:var(--ink-3);line-height:1.65;max-width:74ch}
+.eq-nota strong{color:var(--ink-2)}
+
+/* definir metas */
+.dm-lista{display:flex;flex-direction:column;gap:14px}
+.dm-pessoa{background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;padding:15px 17px 17px}
+.dm-topo{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.dm-topo h3{font-size:14.5px;font-weight:700}
+.dm-topo p{font-size:11.5px;color:var(--ink-3);margin:2px 0 0;font-family:var(--f-mono)}
+.dm-topo .btn{margin-left:auto;flex:none}
+.dm-grupo + .dm-grupo{margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.dm-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:8px}
+.dm-campo{display:flex;flex-direction:column;gap:4px}
+.dm-campo > span{font-size:11.5px;color:var(--ink-2);font-weight:500;line-height:1.3}
+.dm-campo input{
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;font-family:var(--f-mono);font-size:16px;font-weight:600;
+  font-variant-numeric:tabular-nums;width:100%;
+}
+.dm-campo input:focus{border-color:var(--accent-forte);outline:none}
+.dm-campo small{font-size:10.5px;color:var(--ink-3)}
 .rel-tab .eq-nome,.rel-tab .eq-papel{
   background:var(--surface);border:1px solid var(--line);border-radius:7px;
   padding:5px 8px;font-size:12.5px;max-width:230px;width:100%;
@@ -543,6 +562,7 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:6px 0 18px}
       <button role="tab" data-view="metas" aria-selected="false">Metas</button>
       <button role="tab" data-view="relatorio" aria-selected="false">Relatório</button>
       <button role="tab" data-view="indicadores" aria-selected="false">Indicadores</button>
+      <button role="tab" data-view="definir-metas" aria-selected="false" id="aba-definir-metas" hidden>Definir metas</button>
       <button role="tab" data-view="equipe" aria-selected="false" id="aba-equipe" hidden>Equipe</button>
     </div>
     <div class="spacer"></div>
@@ -944,6 +964,7 @@ async function entrou(user){
   document.getElementById("nova").hidden = soLeitura();
   document.getElementById("selo-ro").hidden = !soLeitura();
   document.getElementById("aba-equipe").hidden = perfil.papel !== "gerente";
+  document.getElementById("aba-definir-metas").hidden = perfil.papel !== "gerente";
   await Store.iniciar();
 }
 
@@ -952,7 +973,7 @@ async function entrou(user){
    ============================================================ */
 const Store = {
   contas:new Map(), atividades:new Map(), interacoes:new Map(), perfis:new Map(),
-  anexos:new Map(), convites:new Map(),
+  anexos:new Map(), convites:new Map(), metas:new Map(),
   canal:null, pronto:false,
 
   async iniciar(){
@@ -965,13 +986,14 @@ const Store = {
     this.pronto = false;
   },
   async carregar(){
-    const [p, c, a, i, x, cv] = await Promise.all([
+    const [p, c, a, i, x, cv, mt] = await Promise.all([
       sb.from("perfis").select("*"),
       sb.from("contas").select("*"),
       sb.from("atividades").select("*"),
       sb.from("interacoes").select("*"),
       sb.from("anexos").select("*"),
-      sb.from("convites").select("*")
+      sb.from("convites").select("*"),
+      sb.from("metas").select("*")
     ]);
     const falha = [p,c,a,i].find(r => r.error);
     if(falha){ toast("Não foi possível carregar os dados: " + falha.error.message); return; }
@@ -986,6 +1008,9 @@ const Store = {
     /* convites só são legíveis por gerentes; para os demais vem vazio */
     this.convitesOk = !cv.error;
     this.convites = new Map(((cv.error ? [] : cv.data) || []).map(r => [r.id, r]));
+    /* metas por vendedor: sem a migração, todo mundo usa o padrão */
+    this.metasOk = !mt.error;
+    this.metas = new Map(((mt.error ? [] : mt.data) || []).map(r => [r.id, r]));
     this.pronto = true;
     montarFiltroResponsavel();
     render();
@@ -1004,6 +1029,7 @@ const Store = {
       .on("postgres_changes", {event:"*", schema:"public", table:"anexos"},     aplica(this.anexos, anexoDoBanco))
       .on("postgres_changes", {event:"*", schema:"public", table:"perfis"},     aplica(this.perfis, r => r))
       .on("postgres_changes", {event:"*", schema:"public", table:"convites"},   aplica(this.convites, r => r))
+      .on("postgres_changes", {event:"*", schema:"public", table:"metas"},      aplica(this.metas, r => r))
       .subscribe();
   },
 
@@ -1044,6 +1070,27 @@ const Store = {
     this.interacoes.delete(id); render();
     const { error } = await sb.from("interacoes").delete().eq("id", id);
     if(error){ toast("A interação não foi excluída: " + error.message); this.carregar(); }
+  },
+
+  /* ---------- metas por vendedor ---------- */
+  async salvarMeta(perfilId, chave, alvo){
+    const { error } = await sb.from("metas")
+      .upsert({perfil_id:perfilId, chave, alvo, atualizado_por:Auth.uid, atualizado_em:new Date().toISOString()},
+              {onConflict:"perfil_id,chave"});
+    if(error){
+      toast(/relation .*metas.* does not exist|schema cache/i.test(error.message)
+        ? "As metas por vendedor ainda não foram criadas no banco. Rode migracao-metas-por-vendedor.sql."
+        : "Não foi possível salvar a meta: " + error.message);
+      return false;
+    }
+    await this.carregar();
+    return true;
+  },
+  async restaurarMetas(perfilId){
+    const { error } = await sb.from("metas").delete().eq("perfil_id", perfilId);
+    if(error){ toast("Não foi possível restaurar: " + error.message); return; }
+    await this.carregar();
+    toast("Metas voltaram ao padrão.");
   },
 
   /* ---------- equipe ---------- */
@@ -1416,13 +1463,39 @@ function responsavelPadrao(){
   return v.length ? v[0].id : Auth.uid;
 }
 
+const TODAS_METAS = () => METAS_SEMANA.concat(METAS_MES);
+
+/* Meta de uma pessoa: o padrão do aplicativo, sobrescrito pelo que o
+   gerente tiver definido na aba "Definir metas". */
+function metasDe(perfilId){
+  const m = {};
+  TODAS_METAS().forEach(d => m[d.k] = d.meta);
+  Store.metas.forEach(r => {
+    if(r.perfil_id === perfilId && m[r.chave] !== undefined) m[r.chave] = Number(r.alvo) || 0;
+  });
+  return m;
+}
+/* Meta do recorte em tela: de um vendedor, ou a soma da equipe quando
+   o filtro está em "todos". */
+function metasVigentes(){
+  const alvos = UI.fResp ? [UI.fResp] : vendedores().map(p => p.id);
+  const soma = {};
+  TODAS_METAS().forEach(d => soma[d.k] = 0);
+  if(!alvos.length){ TODAS_METAS().forEach(d => soma[d.k] = d.meta); return soma; }
+  alvos.forEach(id => { const m = metasDe(id); for(const k in soma) soma[k] += m[k]; });
+  return soma;
+}
+
 function montarFiltroResponsavel(){
   const sel = document.getElementById("f-resp");
   const lista = responsaveis();
   if(UI.fResp && !lista.some(p => p.id === UI.fResp)) UI.fResp = "";
   sel.innerHTML = '<option value="">Todos os vendedores</option>' +
     lista.map(p => '<option value="'+esc(p.id)+'"'+(p.id===UI.fResp?" selected":"")+">"+esc(p.nome)+"</option>").join("");
-  sel.hidden = lista.length < 2;
+  /* Visível com qualquer vendedor cadastrado: é por aqui que se alterna
+     entre o acumulado do time e a visão individual, inclusive nas Metas.
+     Só some quando não há nenhum vendedor. */
+  sel.hidden = lista.length === 0;
 }
 
 /* ============================================================
@@ -1442,6 +1515,7 @@ function render(){
   else if(UI.view === "metas") renderMetas();
   else if(UI.view === "relatorio") renderRelatorio();
   else if(UI.view === "equipe") renderEquipe();
+  else if(UI.view === "definir-metas") renderDefinirMetas();
   else renderIndicadores();
   renderDrawer();
 }
@@ -1661,22 +1735,23 @@ function concluirAtividade(a, resumo){
 }
 
 /* ---------- Metas ---------- */
-function cartaoMeta(def, feito, esperado, corrente, escopo){
-  const pct = Math.min(100, Math.round(feito / def.meta * 100));
-  const batida = feito >= def.meta;
+function cartaoMeta(def, feito, esperado, corrente, escopo, alvo){
+  alvo = Math.max(1, Number(alvo) || def.meta);
+  const pct = Math.min(100, Math.round(feito / alvo * 100));
+  const batida = feito >= alvo;
   const atras = corrente && !batida && feito < esperado;
   const cor = batida ? "var(--ok)" : atras ? "var(--danger)" : "var(--mel-2)";
   const situacao = batida ? "Meta batida"
-    : corrente ? (atras ? "Faltam " + (def.meta - feito) + " · abaixo do ritmo"
-                        : "Faltam " + (def.meta - feito) + " · no ritmo")
-    : "Fechou em " + feito + " de " + def.meta;
+    : corrente ? (atras ? "Faltam " + (alvo - feito) + " · abaixo do ritmo"
+                        : "Faltam " + (alvo - feito) + " · no ritmo")
+    : "Fechou em " + feito + " de " + alvo;
   const aberta = UI.metaAberta && UI.metaAberta.escopo === escopo && UI.metaAberta.k === def.k;
   return '<button type="button" class="meta-card'+(batida?" ok":atras?" atras":"")+(aberta?" aberta":"")+'" ' +
       'data-meta="'+def.k+'" data-escopo="'+escopo+'" aria-expanded="'+(aberta?"true":"false")+'">' +
     '<span class="eyebrow">'+esc(def.nome)+'</span>' +
-    '<span class="meta-num"><b>'+feito+'</b><span>/ '+def.meta+'</span></span>' +
+    '<span class="meta-num"><b>'+feito+'</b><span>/ '+alvo+'</span></span>' +
     '<span class="meta-trilho"><i style="width:'+pct+'%;background:'+cor+'"></i>' +
-      (corrente && !batida ? '<u style="left:'+Math.min(100, esperado/def.meta*100)+'%"></u>' : "") +
+      (corrente && !batida ? '<u style="left:'+Math.min(100, esperado/alvo*100)+'%"></u>' : "") +
     '</span>' +
     '<span class="meta-sit" style="color:'+(batida?"var(--ok)":atras?"var(--danger)":"var(--ink-2)")+'">'+esc(situacao)+'</span>' +
     '<span class="meta-desc">'+esc(def.desc)+'</span>' +
@@ -1689,6 +1764,7 @@ function painelMeta(escopo, defs, detalhe, rotuloPeriodo){
   if(!UI.metaAberta || UI.metaAberta.escopo !== escopo) return "";
   const def = defs.find(d => d.k === UI.metaAberta.k);
   if(!def) return "";
+  const alvo = metasVigentes()[def.k] || def.meta;
   const itens = detalhe[def.k] || [];
   const linhas = itens.length ? itens.map((it, n) =>
     '<tr><td class="n" style="color:var(--ink-3)">'+(n+1)+'</td>' +
@@ -1700,7 +1776,7 @@ function painelMeta(escopo, defs, detalhe, rotuloPeriodo){
   return '<div class="meta-det">' +
     '<div class="meta-det-topo">' +
       '<div><h4>'+esc(def.nome)+'</h4>' +
-      '<p>'+esc(rotuloPeriodo)+' · '+itens.length+' de '+def.meta+' · '+esc(def.desc)+'</p></div>' +
+      '<p>'+esc(rotuloPeriodo)+' · '+itens.length+' de '+alvo+' · '+esc(def.desc)+'</p></div>' +
       '<button class="btn btn-sm" id="fechar-det-'+escopo+'">Fechar</button>' +
     '</div>' +
     '<table class="rel-tab"><thead><tr><th class="n">#</th><th>Empresa</th>' +
@@ -1729,7 +1805,11 @@ function renderMetas(){
   const detMes = detalhar(iniMes, fimMes);
   const mesa = apurar(iniMes, fimMes);
 
-  const quem = UI.fResp ? Store.nomeDe(UI.fResp) : "toda a equipe";
+  /* Sem filtro de responsável, o alvo é a soma das metas de todos os
+     vendedores — a leitura gerencial do acumulado da equipe. */
+  const nVend = vendedores().length;
+  const quem = UI.fResp ? Store.nomeDe(UI.fResp) + " · meta individual"
+    : (nVend > 1 ? "time todo · alvos somados de " + nVend + " vendedores" : "time todo");
   const faixa = fmtData(iso(iniSem)) + " a " + fmtData(iso(somaDias(fimSem, -1)));
 
   // --- histórico de 8 semanas ---
@@ -1739,13 +1819,16 @@ function renderMetas(){
     colunas.push({rot:String(i.getDate()).padStart(2,"0")+"/"+String(i.getMonth()+1).padStart(2,"0"),
                   dados:apurar(i, somaDias(i, 7)), atual:k === 0});
   }
-  const histLinhas = METAS_SEMANA.map(d =>
-    '<tr><th>'+esc(d.nome)+'</th>' + colunas.map(col => {
-      const v = col.dados[d.k], pct = Math.min(100, v / d.meta * 100);
-      const cls = v >= d.meta ? "ok" : v > 0 ? "parcial" : "zero";
+  const alvos = metasVigentes();
+  const histLinhas = METAS_SEMANA.map(d => {
+    const alvo = Math.max(1, alvos[d.k] || d.meta);
+    return '<tr><th>'+esc(d.nome)+'</th>' + colunas.map(col => {
+      const v = col.dados[d.k], pct = Math.min(100, v / alvo * 100);
+      const cls = v >= alvo ? "ok" : v > 0 ? "parcial" : "zero";
       return '<td'+(col.atual?' class="atual"':"")+'><span class="hcel '+cls+'" ' +
-        'style="--h:'+Math.max(6, pct)+'%" title="'+v+' de '+d.meta+'"></span><em>'+v+'</em></td>';
-    }).join("") + '</tr>').join("");
+        'style="--h:'+Math.max(6, pct)+'%" title="'+v+' de '+alvo+'"></span><em>'+v+'</em></td>';
+    }).join("") + '</tr>';
+  }).join("");
 
   app.innerHTML = '<div class="page">' +
     '<div class="metas-head">' +
@@ -1757,7 +1840,7 @@ function renderMetas(){
         '<button class="btn btn-sm" data-sem="1" aria-label="Próxima semana"'+(semanaCorrente?" disabled":"")+'>▶</button>' +
       '</div></div>' +
     '<div class="meta-grid">' +
-      METAS_SEMANA.map(d => cartaoMeta(d, som[d.k], d.meta * ritmoSem, semanaCorrente, "semana")).join("") +
+      METAS_SEMANA.map(d => cartaoMeta(d, som[d.k], (alvos[d.k]||d.meta) * ritmoSem, semanaCorrente, "semana", alvos[d.k])).join("") +
     '</div>' +
     painelMeta("semana", METAS_SEMANA, detSem, "Semana de " + faixa) +
 
@@ -1770,7 +1853,7 @@ function renderMetas(){
         '<button class="btn btn-sm" data-mes="1" aria-label="Próximo mês"'+(mesCorrente?" disabled":"")+'>▶</button>' +
       '</div></div>' +
     '<div class="meta-grid dois">' +
-      METAS_MES.map(d => cartaoMeta(d, mesa[d.k], d.meta * ritmoMes, mesCorrente, "mes")).join("") +
+      METAS_MES.map(d => cartaoMeta(d, mesa[d.k], (alvos[d.k]||d.meta) * ritmoMes, mesCorrente, "mes", alvos[d.k])).join("") +
     '</div>' +
     painelMeta("mes", METAS_MES, detMes, MESES[iniMes.getMonth()] + " de " + iniMes.getFullYear()) +
 
@@ -1780,7 +1863,10 @@ function renderMetas(){
         colunas.map(c => '<th'+(c.atual?' class="atual"':"")+'>'+esc(c.rot)+'</th>').join("") +
       '</tr></thead><tbody>'+histLinhas+'</tbody></table></div></div>' +
 
-    '<p class="metas-nota">As metas contam eventos com data, e as de reunião vêm do movimento no funil: ' +
+    '<p class="metas-nota">' +
+      'Use o filtro <strong>Todos os vendedores</strong> no topo para alternar entre as duas leituras: ' +
+      'sem filtro, o alvo é a <strong>soma das metas do time</strong>; escolhendo uma pessoa, a <strong>meta individual</strong> dela. ' +
+      'As metas contam eventos com data, e as de reunião vêm do movimento no funil: ' +
       'entrar no Agendamento conta como reunião agendada; sair do Agendamento para qualquer etapa adiante ' +
       'conta como realizada, mesmo pulando a Maturação. ' +
       'Conta perdida no Agendamento cujo vendedor confirmou que a reunião ocorreu também entra como realizada. ' +
@@ -1809,6 +1895,69 @@ function renderMetas(){
   });
   app.querySelectorAll("[id^='fechar-det-']").forEach(b => b.onclick = () => { UI.metaAberta = null; render(); });
   app.querySelectorAll(".meta-det .lig").forEach(b => b.onclick = () => abrir(b.dataset.conta));
+}
+
+/* ---------- Definir metas (só gerentes) ---------- */
+function renderDefinirMetas(){
+  if(!Auth.perfil || Auth.perfil.papel !== "gerente"){
+    app.innerHTML = '<div class="page"><div class="vazio">Esta área é restrita a gerentes.</div></div>';
+    return;
+  }
+  const equipe = vendedores();
+  if(!equipe.length){
+    app.innerHTML = '<div class="page"><div class="vazio">' +
+      '<strong style="color:var(--ink);display:block;margin-bottom:6px">Nenhum vendedor cadastrado</strong>' +
+      'As metas são definidas por vendedor. Cadastre alguém com o papel <strong>Vendedor</strong> na aba Equipe.</div></div>';
+    return;
+  }
+
+  const bloco = (p, defs, titulo) =>
+    '<div class="dm-grupo"><div class="eyebrow">'+esc(titulo)+'</div><div class="dm-campos">' +
+      defs.map(d => {
+        const m = metasDe(p.id);
+        const personalizada = [...Store.metas.values()].some(r => r.perfil_id === p.id && r.chave === d.k);
+        return '<label class="dm-campo"><span>'+esc(d.nome)+'</span>' +
+          '<input type="number" min="1" max="9999" step="1" value="'+m[d.k]+'" ' +
+            'data-meta-perfil="'+esc(p.id)+'" data-meta-chave="'+d.k+'">' +
+          '<small>'+(personalizada ? "definida" : "padrão: "+d.meta)+'</small></label>';
+      }).join("") +
+    '</div></div>';
+
+  const cartoes = equipe.map(p => {
+    const temPersonalizada = [...Store.metas.values()].some(r => r.perfil_id === p.id);
+    return '<section class="dm-pessoa">' +
+      '<div class="dm-topo"><div><h3>'+esc(p.nome)+'</h3>' +
+        '<p>'+esc(p.email || "")+'</p></div>' +
+        (temPersonalizada
+          ? '<button class="btn btn-ghost btn-sm" data-restaurar="'+esc(p.id)+'">Restaurar padrão</button>' : "") +
+      '</div>' +
+      bloco(p, METAS_SEMANA, "Por semana") +
+      bloco(p, METAS_MES, "Por mês") +
+    '</section>';
+  }).join("");
+
+  app.innerHTML = '<div class="page relatorio">' +
+    '<div class="rel-topo"><div><h2>Definir metas</h2>' +
+      '<p class="metas-sub">Quanto cada vendedor precisa entregar. Vale a partir de agora, sem alterar o que já foi apurado.</p></div></div>' +
+    '<div class="dm-lista">'+cartoes+'</div>' +
+    '<p class="metas-nota">Cada número é salvo ao sair do campo e aparece na hora na aba Metas da pessoa. ' +
+      'Na visão gerencial — aba Metas sem filtro de responsável — o alvo exibido é a ' +
+      '<strong>soma das metas de todos os vendedores</strong>. ' +
+      'O mínimo é 1; para devolver alguém ao padrão da casa use <strong>Restaurar padrão</strong>. ' +
+      'Mudar uma meta não altera o que já foi apurado em semanas anteriores.</p>' +
+    '</div>';
+
+  app.querySelectorAll("[data-meta-perfil]").forEach(el => el.onchange = async () => {
+    const v = Math.max(1, Math.min(9999, Math.round(Number(el.value) || 1)));
+    el.value = v;
+    const ok = await Store.salvarMeta(el.dataset.metaPerfil, el.dataset.metaChave, v);
+    if(ok) toast("Meta atualizada.");
+  });
+  app.querySelectorAll("[data-restaurar]").forEach(b => b.onclick = () => {
+    const p = Store.perfis.get(b.dataset.restaurar);
+    if(p && confirm("Voltar todas as metas de “"+p.nome+"” ao padrão da casa?"))
+      Store.restaurarMetas(p.id);
+  });
 }
 
 /* ---------- Equipe (só gerentes) ---------- */
@@ -1880,9 +2029,8 @@ function renderEquipe(){
       '<p class="rel-nota" style="margin-top:10px">Alterações de nome e papel são salvas ao sair do campo. ' +
       'Revogar remove o acesso, mas preserva o histórico do que a pessoa registrou.</p>') +
 
-    secao("Convidar nova pessoa",
-      "Registre aqui e depois crie a conta de login no Supabase — o acesso é liberado sozinho. " +
-      "A senha é definida lá, nunca passa por este site.",
+    secao("Adicionar pessoa",
+      "A conta é criada aqui mesmo, na hora. Escolha o papel e defina a senha — ou gere uma.",
       '<div class="novo-bloco" style="max-width:640px">' +
         '<div class="grade2">' +
           '<div class="campo"><label for="cv-nome">Nome</label><input id="cv-nome" placeholder="Nome e sobrenome"></div>' +
@@ -1902,12 +2050,16 @@ function renderEquipe(){
         '<button class="btn btn-primary btn-sm" id="cv-add">Criar acesso</button>' +
       '</div>' +
       senhaHTML +
-      '<ol class="eq-passos"><li>Preencha e clique em <strong>Criar acesso</strong>. A conta é criada na hora e aparece na lista acima, com uma senha provisória para você repassar.</li>' +
-      '<li>Se a criação automática ainda não estiver publicada, o CRM guarda o pedido como convite e avisa. Aí basta ir ao Supabase em <strong>Authentication → Users → Add user</strong> com o mesmo e-mail, marcando <strong>Auto Confirm User</strong> — o perfil nasce sozinho.</li></ol>') +
+      '<p class="eq-nota">A pessoa <strong>não recebe e-mail</strong>: envie o endereço do CRM e a senha provisória, ' +
+      'de preferência por canais separados, e peça que troque no primeiro acesso — você também pode trocá-la aqui, ' +
+      'pelo botão <strong>Senha</strong> na lista acima. ' +
+      'Para tirar alguém, use <strong>Revogar</strong>; o histórico do que a pessoa registrou é preservado.</p>') +
 
-    secao("Convites aguardando", "",
-      '<table class="rel-tab"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Convidado em</th><th></th></tr></thead>' +
-      '<tbody>'+linhasPend+'</tbody></table>') +
+    (pendentes.length ? secao("Pendências",
+      "Estes pedidos não viraram conta — a criação automática não respondeu na hora. " +
+      "Clique em Vincular agora se a conta de login já existir; senão, crie a pessoa de novo no formulário acima e apague a linha daqui.",
+      '<table class="rel-tab"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Pedido em</th><th></th></tr></thead>' +
+      '<tbody>'+linhasPend+'</tbody></table>') : "") +
     '</div>';
 
   /* salvar ao sair do campo, não a cada tecla */
@@ -2046,8 +2198,10 @@ function renderRelatorio(){
   const recorte = UI.fTag === "__sem__" ? "Sem classificação" : (UI.fTag || "Grandes Contas e Grupos Regionais");
 
   /* --- 1. metas --- */
+  const alvosRel = metasVigentes();
   const linhasMeta = def => {
-    const alvo = UI.relTipo === "mes" && METAS_SEMANA.indexOf(def) >= 0 ? def.meta * P.semanas : def.meta;
+    const base = alvosRel[def.k] || def.meta;
+    const alvo = UI.relTipo === "mes" && METAS_SEMANA.indexOf(def) >= 0 ? base * P.semanas : base;
     const feito = A[def.k], pct = Math.round(feito / alvo * 100);
     const ok = feito >= alvo;
     return '<tr><td>'+esc(def.nome)+'</td>' +
@@ -2198,7 +2352,8 @@ function renderRelatorio(){
       "• Interações registradas: "+registros.length,
       "• Fechamentos: "+ganhas.length+" · Perdas: "+perdidas.length, "", "*Metas*"];
     (UI.relTipo === "semana" ? METAS_SEMANA : METAS_SEMANA.concat(METAS_MES)).forEach(d => {
-      const alvo = UI.relTipo === "mes" && METAS_SEMANA.indexOf(d) >= 0 ? d.meta * P.semanas : d.meta;
+      const base = alvosRel[d.k] || d.meta;
+      const alvo = UI.relTipo === "mes" && METAS_SEMANA.indexOf(d) >= 0 ? base * P.semanas : base;
       L.push((A[d.k] >= alvo ? "✅" : "⚠️") + " " + d.nome + ": " + A[d.k] + "/" + alvo);
     });
     if(totVenc) L.push("", "⚠️ "+totVenc+" atividade"+(totVenc===1?"":"s")+" venceu sem conclusão.");
