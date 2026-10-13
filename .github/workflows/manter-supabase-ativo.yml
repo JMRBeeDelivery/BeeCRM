@@ -1,0 +1,56 @@
+# =====================================================================
+# Mantém o projeto Supabase ativo
+#
+# O plano gratuito pausa o projeto após cerca de 7 dias sem nenhuma
+# requisição. Este fluxo faz uma consulta leve duas vezes por semana,
+# o que zera esse contador mesmo se ninguém abrir o CRM.
+#
+# ONDE COLOCAR NO REPOSITÓRIO:
+#   .github/workflows/manter-supabase-ativo.yml
+#
+# COMO CRIAR PELA INTERFACE DO GITHUB:
+#   Add file -> Create new file
+#   No campo do nome, digite o caminho inteiro:
+#     .github/workflows/manter-supabase-ativo.yml
+#   (as barras criam as pastas sozinhas)
+#   Cole este arquivo e faça o commit.
+#
+# A chave abaixo é a "publishable/anon", a mesma que já está em
+# config.js e é pública por natureza. Não há exposição nova aqui.
+# Se um dia ela for trocada no Supabase, troque nos dois lugares.
+# =====================================================================
+
+name: Manter Supabase ativo
+
+on:
+  schedule:
+    # Segundas e quintas, 12:00 UTC (09:00 em Brasília)
+    - cron: '0 12 * * 1,4'
+  # Permite rodar à mão pela aba Actions, para testar
+  workflow_dispatch:
+
+jobs:
+  consultar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar a API do Supabase
+        run: |
+          URL="https://ozqxqybcxepjdlhgzokj.supabase.co"
+          CHAVE="sb_publishable_M8QWDWujKXzWnEXsU8rvgg_-5v9NOkA"
+
+          CODIGO=$(curl -s -o /tmp/resposta.txt -w "%{http_code}" \
+            -H "apikey: $CHAVE" \
+            -H "Authorization: Bearer $CHAVE" \
+            "$URL/rest/v1/perfis?select=id&limit=1")
+
+          echo "Resposta HTTP: $CODIGO"
+          cat /tmp/resposta.txt
+
+          # 200 com lista vazia é o esperado: a consulta chegou ao banco
+          # e o RLS barrou a leitura por não haver usuário logado.
+          if [ "$CODIGO" != "200" ]; then
+            echo "::error::O Supabase respondeu $CODIGO. O projeto pode estar pausado ou a chave mudou."
+            exit 1
+          fi
+
+          echo "Projeto ativo."
