@@ -642,6 +642,17 @@ const TIPOS_NEG = new Set(["No-show"]);
 const ORIGENS = ["Outbound frio","LinkedIn / social selling","Indicação","Evento / feira","Inbound","Parceiro","Base reativada","Licitação / RFP"];
 const PORTES = ["Rede nacional (300+ lojas)","Rede regional (100–299)","Rede local (20–99)","Até 20 lojas","Grupo econômico"];
 const MOTIVOS_PERDA = ["Preço por entrega","Prazo de pagamento longo","Sem prioridade agora","Concorrente","Sem fit com o ICP","Decisor não engajou","Processo interno travado","Sem resposta","Nuvem de entregadores"];
+
+/* Motivos que só existem em certas etapas. Em Prospecção o lead ainda
+   não respondeu, então "não consegui falar" é o desfecho mais provável —
+   e não faria sentido oferecer isso em Negociação, onde já houve conversa. */
+const MOTIVOS_POR_ETAPA = {
+  prospeccao: ["Sem sucesso na tentativa de contato"]
+};
+/* O motivo da etapa vem primeiro: na Prospecção costuma ser a resposta. */
+function motivosDaEtapa(etapa){
+  return (MOTIVOS_POR_ETAPA[etapa] || []).concat(MOTIVOS_PERDA);
+}
 /* ------------------------------------------------------------------
    METAS DO VENDEDOR — para mudar um número, altere aqui e republique.
    Cada meta conta um evento datado, não um estado do funil.
@@ -2853,10 +2864,12 @@ function ligarDrawer(c, e){
   };
   const perdido = document.getElementById("dr-perdido");
   if(perdido) perdido.onclick = () => {
-    const m = prompt("Motivo da perda:\n\n"+MOTIVOS_PERDA.map((x,i) => (i+1)+". "+x).join("\n")+"\n\nDigite o número ou escreva o motivo.");
+    const lista = motivosDaEtapa(c.etapa);
+    const m = prompt("Motivo da perda — " + (ETAPA[c.etapa] ? ETAPA[c.etapa].nome : c.etapa) + ":\n\n" +
+      lista.map((x,i) => (i+1)+". "+x).join("\n") + "\n\nDigite o número ou escreva o motivo.");
     if(m === null) return;
     const n = parseInt(m,10);
-    const motivo = (n >= 1 && n <= MOTIVOS_PERDA.length) ? MOTIVOS_PERDA[n-1] : (m.trim() || "Não informado");
+    const motivo = (n >= 1 && n <= lista.length) ? lista[n-1] : (m.trim() || "Não informado");
     const etapaNaPerda = c.etapa;
     lerForm(c);
     c.status = "perdido"; c.motivoPerda = motivo; c.probabilidade = 0; c.perdidaEm = hojeISO();
