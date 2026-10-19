@@ -204,8 +204,19 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 /* Altura fixa no quadro e colunas esticadas: as sete ficam sempre do mesmo
    tamanho, independente de quantos cards cada uma tem. Antes cada coluna
    crescia com o próprio conteúdo e o quadro ficava serrilhado. */
-.board{display:flex;gap:12px;padding:16px 22px 26px;overflow-x:auto;align-items:stretch;height:max(420px, calc(100vh - 236px))}
-.col{flex:0 0 286px;background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;display:flex;flex-direction:column;min-height:0}
+/* As sete colunas dividem a largura da tela em partes iguais (flex:1 1 0),
+   com um mínimo legível: em monitor largo cabem todas sem rolar; em tela
+   estreita o mínimo vale e volta a rolagem horizontal. */
+.board{display:flex;gap:10px;padding:16px 16px 26px;overflow-x:auto;align-items:stretch;height:max(420px, calc(100vh - 236px))}
+.col{flex:1 1 0;min-width:176px;background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;display:flex;flex-direction:column;min-height:0;container-type:inline-size}
+/* Coluna estreita (7 etapas numa tela de notebook): o volume desce para a
+   própria linha em vez de disputar espaço com o nome da rede. */
+@container (max-width: 230px){
+  .card-top{flex-direction:column;gap:1px}
+  .card-emp{font-size:13px}
+  .card-num{text-align:left;display:flex;align-items:baseline;gap:5px}
+  .card-num small{display:inline}
+}
 .col.drop{border-color:var(--st);box-shadow:0 0 0 2px color-mix(in srgb,var(--st) 22%,transparent)}
 .col-head{padding:11px 13px 9px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--surface);border-radius:12px 12px 0 0}
 .col-dot{width:8px;height:8px;border-radius:2px;background:var(--st);flex:none}
