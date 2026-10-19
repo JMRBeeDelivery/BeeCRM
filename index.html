@@ -201,14 +201,19 @@ select.filtro{background:var(--surface-2);border:1px solid var(--line);border-ra
 .funil-qtd{font-size:11.5px;color:var(--ink-3)}
 
 /* ---------- quadro ---------- */
-.board{display:flex;gap:12px;padding:16px 22px 26px;overflow-x:auto;align-items:flex-start}
-.col{flex:0 0 286px;background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;display:flex;flex-direction:column;max-height:calc(100vh - 232px)}
+/* Altura fixa no quadro e colunas esticadas: as sete ficam sempre do mesmo
+   tamanho, independente de quantos cards cada uma tem. Antes cada coluna
+   crescia com o próprio conteúdo e o quadro ficava serrilhado. */
+.board{display:flex;gap:12px;padding:16px 22px 26px;overflow-x:auto;align-items:stretch;height:max(420px, calc(100vh - 236px))}
+.col{flex:0 0 286px;background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;display:flex;flex-direction:column;min-height:0}
 .col.drop{border-color:var(--st);box-shadow:0 0 0 2px color-mix(in srgb,var(--st) 22%,transparent)}
 .col-head{padding:11px 13px 9px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--surface);border-radius:12px 12px 0 0}
 .col-dot{width:8px;height:8px;border-radius:2px;background:var(--st);flex:none}
 .col-head h3{font-size:12.5px;font-weight:700;flex:1;letter-spacing:0}
 .col-count{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);background:var(--surface-2);border-radius:20px;padding:1px 7px}
-.col-body{padding:9px;display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+/* flex:1 preenche a coluna esticada e empurra o rodapé para o pé;
+   min-height:0 é o que permite a rolagem interna dentro do flex */
+.col-body{padding:9px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1 1 auto;min-height:0}
 .col-total{padding:8px 13px;border-top:1px solid var(--line-soft);font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);display:flex;justify-content:space-between;gap:8px}
 .col-empty{padding:16px 10px;text-align:center;color:var(--ink-3);font-size:12px;border:1px dashed var(--line);border-radius:9px}
 
