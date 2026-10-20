@@ -1674,8 +1674,17 @@ function ligarQuadro(){
    c.etapa precisa passar por aqui: é isto que as Metas e o Relatório
    contam. Mexer na etapa sem chamar esta função move o card no quadro e
    deixa o avanço invisível para os indicadores. */
+/* Uma conta só chega uma vez por dia na mesma etapa. Protege contra o
+   caso real de duas abas abertas: a segunda ainda mostra a posição antiga,
+   a pessoa move de novo e o funil grava a mesma chegada duas vezes. */
+function jaRegistrouEtapa(contaId, etapaPara, dia){
+  return [...Store.interacoes.values()].some(i =>
+    i.contaId === contaId && i.etapaPara === etapaPara && String(i.data).slice(0,10) === dia);
+}
+
 function registrarEtapa(conta, de, para){
   if(!de || !para || de === para) return;
+  if(jaRegistrouEtapa(conta.id, para, hojeISO())) return;
   const nomeDe = ETAPA[de] ? ETAPA[de].nome : de;
   const nomePara = ETAPA[para] ? ETAPA[para].nome : para;
   Store.salvarInteracao({id:uid(), contaId:conta.id, tipo:"Nota interna", data:hojeISO(),
@@ -2871,10 +2880,11 @@ function ligarDrawer(c, e){
     /* Se a conta JÁ estava em Fechamento, arrastar até lá e depois marcar
        como ganha gravaria duas chegadas na mesma etapa — e o lead apareceria
        duplicado nas listagens. Aqui a nota vira registro comum. */
-    const jaEstavaEmFechamento = etapaAnterior === "fechamento";
+    const marcaEtapa = etapaAnterior !== "fechamento"
+      && !jaRegistrouEtapa(c.id, "fechamento", hojeISO());
     Store.salvarInteracao({id:uid(), contaId:c.id, tipo:"Nota interna", data:hojeISO(),
-      etapaDe:jaEstavaEmFechamento ? "" : etapaAnterior,
-      etapaPara:jaEstavaEmFechamento ? "" : "fechamento",
+      etapaDe:marcaEtapa ? etapaAnterior : "",
+      etapaPara:marcaEtapa ? "fechamento" : "",
       resumo:"Conta ganha. "+num(c.lojas)+" lojas, "+num(c.entregasMes)+" entregas/mês previstas."});
     toast("🎉 "+c.empresa+" fechada — "+numCurto(c.entregasMes)+" entregas/mês"); renderDrawer();
   };
